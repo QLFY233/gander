@@ -32,7 +32,7 @@ class Port:
     def send(self, command):
         self.page.evaluate("(c) => window.__vwPort.postMessage(c)", command)
 
-    # The six commands PortCommand.kt builds
+    # The seven commands PortCommand.kt builds
     def query(self, q):
         self.send(f"q{q}")
 
@@ -51,6 +51,10 @@ class Port:
     def night_mode(self, on):
         self.send("i1" if on else "i0")
 
+    def play(self, on):
+        """The presentation on or off, which the page answers with "present"."""
+        self.send("s1" if on else "s0")
+
     def messages(self):
         return self.page.evaluate("() => window.__vwInbox.slice()")
 
@@ -61,6 +65,10 @@ class Port:
     def pages(self):
         """Page reports only: "page <n> <of>"."""
         return [m for m in self.messages() if m.startswith("page ")]
+
+    def presents(self):
+        """Presentation reports only: "present <on> <wide>"."""
+        return [m for m in self.messages() if m.startswith("present ")]
 
     def clear_inbox(self):
         self.page.evaluate("() => { window.__vwInbox.length = 0; }")

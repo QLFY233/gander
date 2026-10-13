@@ -41,6 +41,7 @@ should stay obviously so.
 | `ccitt.pdf` | Issue #24. The same bitmap as Group 4 fax, which shares `jbig2.wasm` with JBIG2 and is what a scanner actually produces. It was broken the whole time and never reported. |
 | `mixed-width.pdf` | Issue #20. One A4 page then one A3, both normalised to the same CSS width today. |
 | `ragged-prose.pdf` | Issue #22. The shapes `padRows` has to cover and no other fixture has: ragged right ends, a three-word line, a wide blank before a heading, a two-column gutter, a row mixing 16pt with 8pt, and one line printed sideways for the rotated-span skip. |
+| `slides-16x9.pdf` | The presentation mode in `pdf.html`: three pages at exactly 16:9 and landscape, which is the shape that decides the orientation it asks the app to hold. The A4 fixtures beside it are the other case. |
 | `encrypted.pdf` | The password flow. Standard security handler, user password `gander`. |
 | `not-a-pdf.pdf` | `vwFailure`: named `.pdf`, is plain text. |
 | `report.docx` | docx rendering, and `fixSymbolChars`: contains a Wingdings bullet at U+F0B7. |

@@ -477,6 +477,57 @@
     background: #AF2D18;
     color: #fff;
   }
+
+  /*
+   * Presentation mode: one page, whole, in the middle of the screen, for a document
+   * being shown to somebody rather than read. Reached from the toolbar, driven over the
+   * message channel as night mode is, and entered in onCommand().
+   *
+   * A layer of its own rather than a mode of the page layout. A slide is landscape and
+   * this page lays a document out to the width of the screen, so fit-to-width puts a
+   * 16:9 slide across the top quarter of a phone held upright; the whole of what is
+   * wanted here is a page fitted to the screen both ways. Reaching that by narrowing
+   * .pg would move PAGE_PITCH, which the two look-ahead bands below are counted in, and
+   * would hand the text layer a box its spans are not positioned against. So nothing
+   * about the document underneath is touched: this covers it.
+   *
+   * Position and size are written inline, from the visual viewport, and that is the one
+   * thing here worth not getting wrong. The note in the head says why: this page carries
+   * no viewport meta, so it lays out at 980 CSS px whatever the screen is, and a fixed
+   * box written against that is magnified with the rest of the page when the reader is
+   * pinched in. Somebody who zooms into a table and then asks for the presentation would
+   * be looking at one corner of it. See playFrame() in pdf.mjs.
+   *
+   * touch-action: none, so a sideways drag is this file's gesture and nothing else's.
+   * The page is turned in playTouchEnd(), and a pinch has nothing to do here: the slide
+   * is already whole on the screen, and zooming would only move this box out from under
+   * the finger doing it.
+   *
+   * Black, and black in night mode too. This is the letterbox a slide is shown against
+   * and the room a presentation is given; the document's own colours are the picture in
+   * the middle of it, and night mode turns those over at draw time with the same matrix
+   * it uses everywhere else rather than with a filter over this.
+   */
+  #vw-play {
+    position: fixed;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  /* The id above outranks the display: none the hidden attribute would otherwise carry. */
+  #vw-play[hidden] { display: none; }
+  /*
+   * The slide. Its CSS size is the fit in CSS px and its backing store is that fit at
+   * the screen's own resolution, both written inline as it is drawn; see playShow().
+   * Nothing is said about it here beyond that it is a block, so the flex box centres it
+   * and the letterboxing falls out of the two numbers rather than out of a rule.
+   */
+  #vw-play > canvas { display: block; }
 </style>
 </head>
 <body>
@@ -512,6 +563,17 @@
 </div>
 <div id="vw-status" class="vw-status vw-wait">Rendering document…</div>
 <div id="pages"></div>
+<!--
+ * Presentation mode, empty and hidden until the app asks for it: the canvas inside is
+ * sized and drawn by pdf.mjs, and the box it sits in is placed against the visual
+ * viewport there.
+ *
+ * aria-hidden, because this is a second picture of a page the document already holds and
+ * the readable copy of it is that one. Nothing is drawn on it either: a presentation is
+ * the page and nothing else, and the app puts the page number in its own bar, which is
+ * over this and out of the way while it is up.
+ -->
+<div id="vw-play" hidden aria-hidden="true"><canvas id="vw-play-canvas"></canvas></div>
 <script src="app.js"></script>
 <script src="pdf-setup.js"></script>
 <script nomodule src="pdf-nomodule.js"></script>

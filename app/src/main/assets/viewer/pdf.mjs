@@ -192,6 +192,9 @@ var slots = [];
 var queue = [];
 var inFlight = 0;
 
+/* The two observers while the document is being watched, or null. See observePages(). */
+var pageObservers = null;
+
 /* Tiles waiting for a turn, at most one per page on screen. Separate from the queue
    above rather than mixed into it because the two are picked between on different
    grounds: a page is chosen by how near the middle of the screen it is, and a tile is
@@ -657,6 +660,11 @@ function setNight(on) {
     if (s.state === "drawn" && s.mode !== inverted) { blank(s); want(s); }
   }
   pump();
+  /* The presentation holds no slot, so the loop above is nothing to it: the slide on
+     screen is drawn again here, in the mode the reader has just chosen. Reachable with
+     the app's toolbar out of sight only over the channel, which is what happens when the
+     setting arrives from the other side of a restart. */
+  if (play.on) playShow(play.at);
 }
 
 function draw(slot) {
@@ -732,6 +740,14 @@ function draw(slot) {
       return textLayerFor(slot, page, unscaled.clone({ scale: cssScale }));
     });
   }).then(function () {
+    /*
+     * The presentation went up while this was being drawn, so this bitmap is one nobody
+     * is looking at: it sits behind the slide, and with the bands disconnected nothing
+     * would ever come along to release it. Given straight back. playDropDocument()
+     * cancels what it can when the presentation opens, and a render that had already
+     * finished by then arrives here instead.
+     */
+    if (play.on) { blank(slot); return; }
     slot.state = "drawn";
     /*
      * Night mode moved while this was being drawn, so the picture that just arrived is
@@ -1952,6 +1968,13 @@ function reportPage() {
      and a reopened document is moved to its page. Before that the answer is page 1 of a
      column of placeholders, and a document closed in that moment would be saved there. */
   if (!searchPort || !doc || doc.numPages < 2 || !slots.length || !PAGE_PITCH) return;
+  /* And not while the presentation is up. There is no reading of the document to report
+     then: the page on screen is the one the presentation put there, playReport() says so
+     in the same words, and the scroll position underneath is where it was left rather
+     than anything the reader is looking at. It is also how a turn of the phone, which
+     fires a resize and so lands here through moved(), would otherwise overwrite the
+     slide number with the page the document happens to be scrolled to. */
+  if (play.on) return;
   var vv = window.visualViewport;
   /* Zero height happens once, between the port arriving and the first layout. There is
      no support fallback below this: visualViewport has existed since Chromium 61 and
@@ -2096,6 +2119,9 @@ window.addEventListener("message", function (e) {
      reason openSearchChannel replays a query typed before there was anywhere to send it. */
   reportPage();
   reportLocked();
+  /* The port arrived while the presentation was up, which is what happens when it is
+     opened late. playReport() says nothing when there is nothing to say. */
+  if (play.on) playReport();
 });
 
 /* One letter of command, then the rest is payload. A query is arbitrary text and
@@ -2121,6 +2147,13 @@ function onCommand(msg) {
     /* Night mode on or off. The only command that is not about finding something, apart
        from "g", and like it the app holds the state: nothing is reported back. */
     setNight(msg.charAt(1) === "1");
+  } else if (verb === "s") {
+    /* The presentation on or off, the second command that is not about finding
+       something. Unlike night mode the app does not hold this one alone: the page
+       answers with "present" on the way in and on the way out, because the app has to
+       put its own bar and the phone's bars away for it and is not the side that knows
+       whether a document is open to present. */
+    if (msg.charAt(1) === "1") playEnter(); else playLeave();
   } else if (verb === "c") {
     finding.query = "";
     finding.matches = [];
@@ -2446,6 +2479,7 @@ function vwFailure(e) {
  * moved into the slot state instead: want() ignores anything not blank.
  */
 function observePages() {
+  if (pageObservers) return;
   var draws = new IntersectionObserver(function (entries) {
     entries.forEach(function (e) {
       if (e.isIntersecting) want(e.target._slot); else unwant(e.target._slot);
@@ -2463,6 +2497,383 @@ function observePages() {
     draws.observe(slot.box);
     keeps.observe(slot.box);
   });
+  pageObservers = { draws: draws, keeps: keeps };
+}
+
+/*
+ * Stop watching the document, for the presentation mode below.
+ *
+ * Held in a variable of its own and disconnectable because presentation mode puts the
+ * document down for the length of a slide show: every page it is holding goes back to
+ * blank, and a band that is still watching would have every one of them asked for again
+ * the moment anything moved. Re-observing on the way out is what observePages()'s guard
+ * is for, so the two cannot end up stacking two observers on every box.
+ */
+function unobservePages() {
+  if (!pageObservers) return;
+  pageObservers.draws.disconnect();
+  pageObservers.keeps.disconnect();
+  pageObservers = null;
+}
+
+/*
+ * Presentation mode.
+ *
+ * One page at a time, whole, in the middle of the screen, with the app's title bar and
+ * the phone's own bars out of the way: for a document being shown to somebody rather
+ * than read. Asked for over the channel, "s1" and "s0", and answered with "present" so
+ * that the app knows whether there is anything to present.
+ *
+ * The page is drawn here rather than in the flow above. A page in the flow is laid out
+ * to the width of the screen whatever shape it is, which is right for reading and wrong
+ * for this: a 16:9 slide fitted to the width of an upright phone is a strip across the
+ * top quarter of it. The fit here is to both directions, and the slide is centred in
+ * what is left over. See the note beside #vw-play for why that cannot be done by
+ * narrowing .pg, and playFrame() below for why the box is measured against the visual
+ * viewport.
+ *
+ * One canvas, one render, at the resolution the screen actually has. The document's own
+ * pages are given up while this is up - unobservePages() and playDropDocument() - so a
+ * presentation costs what a slide costs and not what a slide plus a band of pages costs,
+ * which on a long document is the difference between about 10 MB and about 80.
+ */
+var playLayer = document.getElementById("vw-play");
+var playCanvas = document.getElementById("vw-play-canvas");
+
+/*
+ * How far across a swipe has to go, in CSS px, before it turns the page.
+ *
+ * Chromium's own touch slop is about 8, and this is deliberately several times it. A
+ * hand holding a phone moves by more than 8 px between one page and the next, and a
+ * slide that turned itself over because somebody shifted their grip is worse than one
+ * that asks for a deliberate swipe. Measured against a thumb: a flick across the middle
+ * of the screen is 300 px and up, and a resting hand drifting is under 30.
+ */
+var SWIPE_MIN = 48;
+
+/*
+ * What the presentation is doing.
+ *
+ * "at" is the page on screen, counting from one, and 0 while nothing is up. "unscaled"
+ * is that page's viewport at scale 1, which is where the app is told whether the slide
+ * is wider than it is tall: the two numbers that decide the orientation the app holds
+ * the phone at are read off it. "frame" is the box the last fit was measured against,
+ * so a move of the visual viewport that did not change its size costs nothing.
+ *
+ * "wanted" is a request that arrived before there was a document to present, which is
+ * what a tap on the app's menu in the first moments after opening looks like. It is
+ * honoured at the foot of the load chain rather than dropped, because by then the app
+ * has put its own bar away and is waiting to be told what happened.
+ */
+var play = {
+  on: false,
+  wanted: false,
+  at: 0,
+  drawn: 0,
+  unscaled: null,
+  frame: null,
+  task: null,
+  page: null,
+  observers: false
+};
+
+/*
+ * Hung on the layer, as each page's slot is hung on its box, so that a test can say what
+ * a wait was left looking at: _play.at is the page the presentation means to be showing
+ * and _play.drawn the one whose bitmap is actually on the canvas, which are two different
+ * numbers for as long as a render is in flight.
+ */
+playLayer._play = play;
+
+/*
+ * The box the presentation is fitted to, in CSS px, and where it is.
+ *
+ * The visual viewport and not the layout one, which is the whole of the reason this is
+ * a function. This page has no viewport meta, so its layout is 980 CSS px wide whatever
+ * the screen is, and loadWithOverviewMode scales that to fit; a reader who has pinched
+ * in is looking at part of it. A box placed against the layout viewport would be laid
+ * out at the layout's own size and then magnified with it, so somebody who zoomed into
+ * a table and then asked for the presentation would be shown one corner of a slide.
+ *
+ * offsetLeft and offsetTop are where the visible part starts within that layout, and
+ * they are 0 until somebody pinches. width and height are what is visible, so the box
+ * below is exactly the screen at whatever zoom the reader is at.
+ */
+function playFrame() {
+  var vv = window.visualViewport;
+  if (!vv || !(vv.width > 0) || !(vv.height > 0)) return null;
+  return { left: vv.offsetLeft, top: vv.offsetTop, width: vv.width, height: vv.height };
+}
+
+/*
+ * Put the layer over exactly what the reader can see, and fit the slide to it again if
+ * the box has changed shape.
+ *
+ * Called on entry and on every move or resize of the visual viewport, which is what a
+ * turn of the phone arrives as. A move that did not change the size - a pinch pan, which
+ * the layer's touch-action stops from happening but which costs nothing to allow for -
+ * moves the box and re-fits nothing, because the slide's own CSS size has not changed
+ * and the flex box keeps it centred in the new one.
+ */
+function playPlace() {
+  if (!play.on) return;
+  var f = playFrame();
+  if (!f) return;
+  var was = play.frame;
+  var moved = !was || was.left !== f.left || was.top !== f.top;
+  var resized = !was || was.width !== f.width || was.height !== f.height;
+  play.frame = f;
+  if (moved || resized) {
+    playLayer.style.left = f.left + "px";
+    playLayer.style.top = f.top + "px";
+    playLayer.style.width = f.width + "px";
+    playLayer.style.height = f.height + "px";
+  }
+  if (resized && play.at >= 1) playShow(play.at);
+}
+
+/* Stop the render in flight. The page object is left where it is; see playShow(). */
+function playCancel() {
+  var task = play.task;
+  play.task = null;
+  /* The bitmap on the canvas is now the one before the page being asked for, whatever it
+     was, so the two numbers agree again only once a render lands. */
+  play.drawn = 0;
+  if (task) task.cancel();
+}
+
+/*
+ * Draw the slide for page [n], whole, centred, at the resolution of the screen.
+ *
+ * Three scales again, and they are not the same number, for the same reason as in draw()
+ * and one more. "fit" is CSS px per page unit and is what makes the slide whole: the
+ * smaller of the two ratios, so the longer of the two dimensions meets the screen and
+ * the other is letterboxed. liveScale() is canvas px per CSS px, and it is the uncapped
+ * one deliberately - baseScale() stops at DPR_FALLBACK, which is 2, and a phone turned
+ * on its side is about 2400 physical px across 980 CSS px, so a slide drawn at baseScale
+ * would be at four fifths of the screen's resolution and visible as such. There is one
+ * canvas here rather than a band of them, which is what makes the uncapped scale
+ * affordable: 2400 by 1080 is about 10 MB and the band this replaced was several times
+ * that.
+ *
+ * The canvas keeps the CSS size the fit came to while its backing store is that fit at
+ * the screen's resolution, which is the same arrangement .pg and its canvas have.
+ */
+function playShow(n) {
+  if (!play.on || !doc) return;
+  n = Math.max(1, Math.min(slots.length, Math.floor(n) || 1));
+  play.at = n;
+  var f = play.frame || playFrame();
+  if (!f) return;
+  /* The page being left, given up once its replacement is in hand rather than now: a
+     render cancelled and a page cleaned up in the same turn leaves the screen showing
+     the old slide out of a canvas that has been emptied, which reads as a flash. */
+  var left = play.page;
+  playCancel();
+  doc.getPage(n).then(function (page) {
+    /* A later turn or the end of the presentation got here first. */
+    if (!play.on || play.at !== n) return;
+    if (left && left !== page) left.cleanup();
+    play.page = page;
+
+    var unscaled = page.getViewport({ scale: 1 });
+    play.unscaled = unscaled;
+    /* Said before the render rather than after it, because this is what the app turns
+       the phone for, and a slide shown sideways while the phone turns is the one thing
+       worth doing early. */
+    playReport();
+
+    var fit = Math.min(f.width / unscaled.width, f.height / unscaled.height);
+    var scale = fit * liveScale();
+    scale *= within(unscaled.width * scale, unscaled.height * scale, BASE_MAX_PIXELS);
+    var viewport = unscaled.clone({ scale: scale });
+    playCanvas.width = viewport.width;
+    playCanvas.height = viewport.height;
+    playCanvas.style.width = String(unscaled.width * fit) + "px";
+    playCanvas.style.height = String(unscaled.height * fit) + "px";
+    var ctx = playCanvas.getContext("2d");
+    var task = page.render({
+      canvasContext: ctx,
+      viewport: viewport,
+      /* As in draw(), and only when it is going to be used. */
+      recordImages: inverted
+    });
+    play.task = task;
+    return task.promise.then(function () {
+      if (play.task !== task) return;
+      play.task = null;
+      if (inverted) {
+        var quads = imageQuads(page, playCanvas.width, 0, playCanvas.height, 0);
+        var sample = quads.length ? pageSample(ctx) : null;
+        recolour(ctx, sample
+          ? quads.filter(function (q) { return !looksLikePaper(sample, q); })
+          : []);
+      }
+      play.drawn = n;
+    }, function () {
+      /* Cancelled or genuinely broken. Nothing to put back: the canvas holds whatever
+         the last slide did, and the next turn draws over it. */
+      if (play.task === task) play.task = null;
+    });
+  });
+}
+
+/*
+ * Tell the app where the presentation is.
+ *
+ * "present <on> <wide>", and the page number in the shape the scroll side already uses,
+ * "page <n> <total>". Two messages rather than one because the second is a message the
+ * app already reads and this way it needs no third shape: the bar's readout, the jump
+ * to a page and the page saved to reopen at all go on working through the presentation
+ * without knowing it exists.
+ *
+ * "wide" is the orientation the app is being asked to hold, and it is asked for afresh
+ * on every page because a document is free to mix them. A slide deck with a portrait
+ * cover is the case this is for.
+ */
+function playReport() {
+  if (!searchPort) return;
+  if (!play.on) { searchPort.postMessage("present 0 0"); return; }
+  var wide = play.unscaled && play.unscaled.width > play.unscaled.height ? 1 : 0;
+  searchPort.postMessage("present 1 " + wide);
+  if (play.at >= 1) {
+    /* Kept in step with the scroll side's own record, so that the page named when the
+       presentation ends is this one rather than one the document happens to be
+       scrolled to. */
+    lastPageSent = play.at;
+    searchPort.postMessage("page " + play.at + " " + slots.length);
+  }
+}
+
+/*
+ * Give the document up for the length of the presentation: nothing wanted, nothing drawn.
+ *
+ * unwant() before release(), because they answer different states: a page waiting its
+ * turn is dropped from the queue, one being drawn has its render cancelled, and one that
+ * is finished has its bitmap and its decoded artwork given back. A cancelled render ends
+ * in blank() through draw()'s failure path, so every one of the three ends up holding
+ * nothing.
+ *
+ * Both queues are emptied as well. The tile queue holds requests rather than pages, and
+ * drawTile() drops any whose page has stopped being drawn, but leaving them there would
+ * have pump() spend a turn on each of them finding that out.
+ */
+function playDropDocument() {
+  for (var i = 0; i < slots.length; i++) {
+    unwant(slots[i]);
+    release(slots[i]);
+  }
+  queue.length = 0;
+  tileQueue.length = 0;
+}
+
+function playEnter() {
+  if (play.on) return;
+  if (!doc || !slots.length) { play.wanted = true; return; }
+  play.on = true;
+  play.at = 0;
+  play.unscaled = null;
+  play.frame = null;
+  /* Remembered, so that a document of one page - which has no observers to begin with -
+     does not acquire them on the way out. */
+  play.observers = !!pageObservers;
+  unobservePages();
+  playDropDocument();
+  playLayer.hidden = false;
+  playPlace();
+  var vv = window.visualViewport;
+  /* Where the reader was, which is where a presentation should start. askedFor is the
+     page a jump or a reopen put on screen and has not been moved from since. */
+  playShow(askedFor ? askedFor.n : (vv ? pageOnScreen(vv) : 1) || 1);
+}
+
+function playLeave() {
+  /* Cleared before the guard below, and that is not tidiness. A request can arrive before there
+     is a document to present, and the reader can change their mind before it opens; the request
+     is kept in "wanted" for the foot of the load chain, and leaving has to take it back or a
+     document that opens a moment later presents itself to somebody who has said no. */
+  play.wanted = false;
+  if (!play.on) return;
+  play.on = false;
+  playCancel();
+  if (play.page) { play.page.cleanup(); play.page = null; }
+  playLayer.hidden = true;
+  playCanvas.width = 0;
+  playCanvas.height = 0;
+  playCanvas.style.width = "";
+  playCanvas.style.height = "";
+  var at = play.at;
+  play.at = 0;
+  play.drawn = 0;
+  play.unscaled = null;
+  play.frame = null;
+  /* Told before the document comes back, so the app has its own bar out again by the
+     time there is something under it to read. */
+  playReport();
+
+  /* The document goes back to the page the presentation ended on rather than to where it
+     was scrolled to before, which is the page the reader was last looking at and what a
+     reopen should come back to. */
+  var back = at >= 1 && at <= slots.length ? place(slots[at - 1]) : Promise.resolve();
+  back.then(function () {
+    if (play.observers) observePages();
+    /* Asked for by name as well as through the observers. A document of one page has
+       none, and an observer's first callback arrives a frame later than this, which is
+       long enough for a reader who turned the phone back to see a white page. */
+    var s = slots[Math.max(0, Math.min(slots.length - 1, (at || 1) - 1))];
+    if (s) { want(s); pump(); }
+    reportPage();
+  });
+}
+
+/*
+ * A swipe across the slide turns it over.
+ *
+ * One finger at a time. A second one landing cancels whatever the first was doing: two
+ * fingers is a pinch, and this mode has nothing for one, but a browser delivers each
+ * finger's events separately and a pinch would otherwise be read as whichever of the two
+ * lifted first having swiped.
+ *
+ * The gesture is read from start to end rather than from every move, so a slow drag and
+ * a flick are the same thing and no work happens per frame. Mostly sideways, and far
+ * enough: a mostly vertical drag is somebody trying to scroll a slide that has nothing
+ * to scroll, and a short one is a tap.
+ */
+var swipe = null;
+
+function playTouchStart(e) {
+  if (e.touches.length !== 1) { swipe = null; return; }
+  swipe = { id: e.touches[0].identifier, x: e.touches[0].clientX, y: e.touches[0].clientY };
+}
+
+function playTouchEnd(e) {
+  if (!swipe) return;
+  var from = swipe;
+  swipe = null;
+  var t = null;
+  for (var i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === from.id) t = e.changedTouches[i];
+  }
+  if (!t) return;
+  var dx = t.clientX - from.x;
+  var dy = t.clientY - from.y;
+  if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < Math.abs(dy)) return;
+  /* Right to left goes on, the way a page is turned, and the ends stop rather than
+     wrapping: the first page has nothing before it. */
+  var n = play.at + (dx < 0 ? 1 : -1);
+  if (n < 1 || n > slots.length) return;
+  playShow(n);
+}
+
+playLayer.addEventListener("touchstart", playTouchStart, { passive: true });
+playLayer.addEventListener("touchend", playTouchEnd, { passive: true });
+playLayer.addEventListener("touchcancel", function () { swipe = null; }, { passive: true });
+
+/* The phone turned, or the app changed the orientation it is holding it at. */
+window.addEventListener("resize", playPlace, { passive: true });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", playPlace, { passive: true });
+  window.visualViewport.addEventListener("scroll", playPlace, { passive: true });
 }
 
 /* Skipped entirely below the pdf.js floor. The card is already on screen from the
@@ -2564,6 +2975,9 @@ if (!vwPdfBlocked) {
     .then(function () {
       vwStatusDone();
       if (doc.numPages > 1) observePages();
+      /* Asked for before the document was open. Honoured here, where there is something
+         to present and the app is already waiting to be told. */
+      if (play.wanted) { play.wanted = false; playEnter(); }
       /* Once, unprompted. Somebody who opens a document and reads the first page
          without scrolling still has to be told how long it is, and the jump-to-page
          control has no total to check against until this has been sent. */

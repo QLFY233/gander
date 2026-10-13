@@ -453,3 +453,129 @@ def wait_for_tile_away_from_the_top(page, timeout=15000):
         timeout=timeout,
     )
     return page
+
+
+# ---------------------------------------------------------------------------
+# Presentation mode, the layer pdf.html covers a document with
+# ---------------------------------------------------------------------------
+
+def play_state(page):
+    """
+    What the presentation is doing, as pdf.mjs has it.
+
+    "at" is the page it means to be showing and "drawn" the one whose bitmap is
+    actually on the canvas, which are different numbers for as long as a render is in
+    flight. A wait has to get past the second; see wait_for_slide().
+    """
+    return page.evaluate(
+        "() => { const p = document.getElementById('vw-play')._play;"
+        "return p && {on: p.on, at: p.at, drawn: p.drawn,"
+        " wide: !!p.unscaled && p.unscaled.width > p.unscaled.height}; }"
+    )
+
+
+def play_visible(page):
+    return page.evaluate(
+        "() => { const l = document.getElementById('vw-play');"
+        "return !!l && !l.hidden && getComputedStyle(l).display !== 'none'; }"
+    )
+
+
+def wait_for_slide(page, n=None, timeout=20000):
+    """Waits until page [n] - the current one if none is given - is on the canvas."""
+    try:
+        page.wait_for_function(
+            "(n) => { const p = document.getElementById('vw-play')._play;"
+            "return !!p && p.on && p.drawn > 0 && p.drawn === (n === null ? p.at : n); }",
+            arg=n, timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(f"no slide was drawn: {play_state(page)}") from None
+    return page
+
+
+def wait_for_play_away(page, timeout=20000):
+    """Waits until the layer is out of the way and the document is back under it."""
+    page.wait_for_function(
+        "() => { const l = document.getElementById('vw-play');"
+        "const p = l._play; return !!l.hidden && !p.on; }",
+        timeout=timeout,
+    )
+    return page
+
+
+def play_boxes(page):
+    """The layer's box and the slide's, in CSS px, and the canvas's backing store."""
+    return page.evaluate(
+        """() => {
+          const l = document.getElementById('vw-play');
+          const c = document.getElementById('vw-play-canvas');
+          const lb = l.getBoundingClientRect(), cb = c.getBoundingClientRect();
+          return {
+            layer: {x: lb.x, y: lb.y, w: lb.width, h: lb.height},
+            slide: {x: cb.x, y: cb.y, w: cb.width, h: cb.height},
+            canvas: {w: c.width, h: c.height},
+          };
+        }"""
+    )
+
+
+def play_colours(page, fx0=0.0, fy0=0.0, fx1=1.0, fy1=1.0, floor=20):
+    """
+    The colours on the slide's bitmap, commonest first, as page_colours() gives them.
+
+    The slide is its own canvas and is not one of #pages, so it needs its own reader:
+    what the presentation drew is the only thing that says night mode reached it.
+    """
+    found = page.evaluate(
+        """([a, b, c, e]) => {
+            const cv = document.getElementById('vw-play-canvas');
+            if (!cv || !cv.width) return null;
+            const x = Math.round(a * cv.width), y = Math.round(b * cv.height);
+            const w = Math.round((c - a) * cv.width), h = Math.round((e - b) * cv.height);
+            const d = cv.getContext('2d').getImageData(x, y, w, h).data;
+            const seen = new Map();
+            for (let i = 0; i < d.length; i += 4) {
+              const k = d[i] + ',' + d[i+1] + ',' + d[i+2];
+              seen.set(k, (seen.get(k) || 0) + 1);
+            }
+            return [...seen.entries()].sort((p, q) => q[1] - p[1]);
+        }""",
+        [fx0, fy0, fx1, fy1],
+    )
+    return {k: n for k, n in (found or []) if n >= floor}
+
+
+def touch_gesture(page, points):
+    """
+    A finger or two on the presentation layer, through Chromium's own touch pipeline.
+
+    Dispatched as real touch input rather than as events built in the page, so the layer's
+    touch-action is honoured on the way in and a gesture the browser would take for itself
+    is taken before the page ever sees it. [points] is a list of fingers, each a list of
+    (x, y) positions, one per step; a finger of one position is a tap.
+    """
+    cdp = page.context.new_cdp_session(page)
+    def send(kind, at):
+        cdp.send("Input.dispatchTouchEvent", {
+            "type": kind,
+            "touchPoints": [{"x": x, "y": y, "id": i} for i, (x, y) in enumerate(at)],
+        })
+    steps = max(len(f) for f in points)
+    send("touchStart", [f[0] for f in points])
+    for k in range(1, steps):
+        send("touchMove", [f[min(k, len(f) - 1)] for f in points])
+    # The points released, which is what the page reads off changedTouches. Chromium
+    # accepts an empty list here and generates the touchend from its own record of what
+    # was down, but which fingers a page is told about is the whole of what this gesture
+    # is testing, so they are named.
+    send("touchEnd", [f[-1] for f in points])
+    return page
+
+
+def play_centre(page):
+    box = page.evaluate(
+        "() => { const r = document.getElementById('vw-play').getBoundingClientRect();"
+        "return [r.x + r.width / 2, r.y + r.height / 2]; }"
+    )
+    return box

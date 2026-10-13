@@ -219,6 +219,34 @@ def pdfs() -> None:
     c.save()
     written(OUT / "dense-map.pdf")
 
+    # slides-16x9.pdf: a deck exported to PDF, which is what the presentation
+    # mode in pdf.html is for. Three pages at exactly 16:9 and landscape, so a
+    # test can say what the slide's shape is without measuring it, and each page
+    # carries a number so that turning one over is visible in the text layer as
+    # well as in the canvas.
+    #
+    # A page that is wider than it is tall is the whole of what decides the
+    # orientation the presentation mode asks for, so this fixture and the A4
+    # ones beside it are the two cases that matter: see widerThanTall() in
+    # PresentationChrome.kt and the report it is fed from in pdf.mjs.
+    slide = (720, 405)
+    c = new(OUT / "slides-16x9.pdf", pagesize=slide)
+    w, h = slide
+    for n in range(1, 4):
+        c.setFillColorRGB(0.13, 0.16, 0.22)
+        c.rect(0, 0, w, 54, stroke=0, fill=1)
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(36, 20, f"Quarterly review, slide {n}")
+        c.setFillColorRGB(0.11, 0.14, 0.19)
+        c.setFont("Helvetica", 13)
+        c.drawString(36, h - 90, f"This is slide {n} of three.")
+        c.setFillColorRGB(0.85, 0.29, 0.16)
+        c.rect(36, h - 160, 120, 34, stroke=0, fill=1)
+        c.showPage()
+    c.save()
+    written(OUT / "slides-16x9.pdf")
+
     # ragged-prose.pdf: issue #22. A text layer only covers its glyphs, so the
     # leading between lines, the white beside a short line, the gutter between
     # two columns and the page margins belong to no span at all, and a finger
