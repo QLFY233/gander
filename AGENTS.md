@@ -13,6 +13,8 @@
 - 分支：`main` = 上游镜像（**永不提交**）；工作分支 `local/*`。
 - 上游仓库的**提交历史、作者、文件内容均不属于本仓库**，本地改动必须与上游可区分。
 - **上游写权限实测（2026-10-13，`gh api repos/mokshablr/gander --jq .permissions`）：`push: false`、`admin: false`。** 本机 GitHub 身份对该仓库没有任何写权限——这是防误推上游的**最终保险**；本地 pushurl 禁用与 `.git/hooks/pre-push` 只负责“提前失败 + 给出可读错误”，重 clone 后会丢失，权限不会。
+- **托管方式：公开 fork（全公开一档）。** 公开仓库（含公开 fork）的 Actions 标准 runner **免费且不限量**，免费分钟配额只对私有仓库生效。代价：仓库内容、Actions 日志、artifact 全部公开，且会出现在上游的 forks 列表里。
+- **fork 的 Actions 默认被禁用。** 首次 push 后必须由仓库所有者在 Actions 页手动启用（GitHub 提示 *"Because this repository contained workflow files when it was forked, we have disabled them from running on this fork."*）。未启用之前任何 workflow 都不会运行。
 
 ## 二、铁律（禁止 / 必须）
 
@@ -46,6 +48,7 @@
 | Kotlin 代码 | `./gradlew testDebugUnitTest` + `./gradlew lintDebug` |
 | `AndroidManifest.xml` / 权限 | `./gradlew checkReleasePermissions`（release 合并清单） |
 | vendored 库升级 | `pytest tests/viewer` + `docs/VENDORED.md` + `licences.md` 同步 |
+| push 到 `local/**` | `fork-build.yml` 全绿：viewer 浏览器测试 + `testDebugUnitTest` + `lintDebug` + `assembleDebug` |
 | 参考截图（goldens） | **只允许在 Linux/CI 生成**：`scripts/test-viewer-visual.sh --update-goldens`（文本栅格化跨平台不一致，本机不得重生成） |
 
 - `lintDebug` 对**新增**告警失败；存量 39 条在 `app/lint-baseline.xml`，**禁止**为了让构建通过而扩大 baseline。
@@ -62,6 +65,10 @@
 - 无 keystore 时 CI 产出的 release APK 是**未签名**的；签名密钥取自 `keystore/gander.jks`（不入库）。
 - 本机无 Android SDK ⇒ **CI 是本仓库唯一的 APK 产出途径**。
 - 本仓库当前**没有 `origin`**，因此在建立自己的远程仓库之前，Actions 不会运行。
+- **fork 特有**：Actions 默认禁用，需在 Actions 页手动启用一次；公开仓库的 `schedule` workflow 在新 fork 中默认不跑，且公开仓库 60 天无活动会被自动禁用 ⇒ `device.yml` 在 fork 中不作为门禁。
+- 上游 `build.yml` 只认 `push: main` 与 `pull_request`，**不在 `local/**` 上触发**；本地分支的构建入口是本仓库新增的 `.github/workflows/fork-build.yml`（`push: local/**` + `workflow_dispatch`）。
+- 签名 Secrets 名称固定：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_PASSWORD`；keystore 别名**必须**是 `gander`（`app/build.gradle.kts` 硬编码）。未配置 Secrets 时 release APK 是未签名产物。
+- 公开仓库的 **Actions 日志与 artifact 对任何登录用户可见**。
 
 **规则**
 
@@ -75,6 +82,9 @@
 8. Actions 必须使用 JDK 21（与依赖中的 Robolectric toolchain 要求一致）；禁止单独升级 JDK / Gradle / AGP 而不整体验证。
 9. 参考截图（goldens）只允许在 Linux runner 生成或更新；禁止在 Windows/macOS 本地 `--update-goldens` 后提交。
 10. viewer 测试容器镜像 tag 中的 playwright 版本必须与 `tests/viewer/requirements.txt` 里的 `playwright` 版本一致；改一个必须同改另一个。
+11. `fork-build.yml` 同样受第 1、2、3、4、5 条约束：禁止移除其中的 `wrapper-validation`、`testDebugUnitTest`、`lintDebug`，禁止调整顺序使构建先于检查。
+12. **公开仓库的日志与 artifact 一律视为公开**：禁止在 workflow 中打印凭据/口令/token，禁止把 APK 之外的仓库内容（尤其用户文档、内部笔记、临时数据）上传为 artifact。
+13. **未手动启用 Actions 之前，不得声称“CI 通过”**；启用入口是仓库 Actions 页的 "I understand my workflows, go ahead and enable them"。
 
 ## 五、环境事实（不是待办）
 
@@ -97,6 +107,7 @@
 - `docs/VENDORED.md` — vendored 依赖的唯一 provenance 权威表。
 - `app/src/main/assets/licences.md` — 随 APK 分发的许可全文，受第二章第 13 条约束。
 - `tests/viewer/**` — 浏览器内测试；`goldens/` 只允许 CI 更新。
+- `.github/workflows/fork-build.yml` — fork 自建构建入口（新增文件），受第四章规则 11 约束；`build.yml` / `device.yml` 属上游语义，受铁律 7 保护，禁止修改。
 - `CONTRIBUTING.md` 与 `SECURITY.md` 是上游规矩，**与本文件冲突时以本文件为准**（本文件更严）。
 
 ## 七、重新 clone 后必须恢复的本地状态（不可丢）
