@@ -24,6 +24,15 @@
         android:title="@string/night_mode"
         android:visible="false"
         app:showAsAction="never" />
+    <!-- Presentation mode: one page at a time, whole, for a PDF being shown to somebody rather
+         than read. A deck exported to PDF is the case it is for. Only ever visible for a PDF,
+         and never under a screen reader, which has the swipe for itself: see setUpPresentation. -->
+    <item
+        android:id="@+id/action_present"
+        android:checkable="true"
+        android:title="@string/present"
+        android:visible="false"
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_share"
         android:icon="@drawable/ic_share"

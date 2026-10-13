@@ -98,6 +98,11 @@
          rather than what it does, because "invert" describes the arithmetic and this is
          the only place in the app a reader meets it. -->
     <string name="night_mode">Night mode</string>
+    <!-- Presentation mode, which is a PDF shown to somebody rather than read: one page at a
+         time, whole, the phone turned the way the page is, and a swipe to turn it over. Named
+         for what it is for rather than for what it does, as night mode is. Only ever offered
+         for a PDF, and never under a screen reader, which has the swipe for itself. -->
+    <string name="present">Present</string>
     <string name="page_number">Page number</string>
     <string name="page_range">1 to %1$d</string>
     <string name="page_out_of_range">Enter a page between 1 and %1$d</string>

@@ -98,6 +98,17 @@ internal class DocumentChrome(
     /** The bar's height in dp, for the URL the page is loaded from. */
     fun heightDp(): String = dp(if (top.height > 0) top.height else toolbar.layoutParams.height)
 
+    /**
+     * The whole strip out of the way, for a document being presented. See [PresentationChrome].
+     *
+     * The bar's own place in it is left exactly where it was, so it comes back where the reader
+     * had scrolled it to rather than at the top, and nothing is animated: a slide does not fade
+     * in under a bar sliding away.
+     */
+    fun setVisible(on: Boolean) {
+        top.visibility = if (on) View.VISIBLE else View.GONE
+    }
+
     /** What the page has to be told once the channel is open, since it was told only the URL. */
     fun replay() {
         tellPage(PortCommand.barHeight(heightDp()))

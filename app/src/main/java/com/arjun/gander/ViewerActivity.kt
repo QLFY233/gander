@@ -312,6 +312,7 @@ open class ViewerActivity : AppCompatActivity() {
         setContentView(R.layout.activity_viewer)
         applySystemBarInsets(findViewById(R.id.root))
         onBackPressedDispatcher.addCallback(this, searchBackCallback)
+        onBackPressedDispatcher.addCallback(this, presentationBackCallback)
         pageIndicator.setOnClickListener { askForPage() }
 
         copySource = savedInstanceState?.getString(STATE_COPY_SOURCE)?.let(Uri::parse)
@@ -387,6 +388,7 @@ open class ViewerActivity : AppCompatActivity() {
         mime: String?
     ) {
         setUpNightMode(toolbar, kind)
+        setUpPresentation(toolbar, kind)
         goToPageItem = toolbar.menu.findItem(R.id.action_go_to_page).apply {
             setOnMenuItemClickListener { askForPage(); true }
         }
@@ -450,6 +452,85 @@ open class ViewerActivity : AppCompatActivity() {
             searchPort?.postMessage(WebMessageCompat(PortCommand.nightMode(on)))
             true
         }
+    }
+
+    /**
+     * Presentation mode: one page at a time, whole, for a PDF being shown to somebody rather than
+     * read. A deck exported to PDF is the case it is for.
+     *
+     * Offered for every PDF rather than for the ones that look like slides, and the shape of the
+     * page decides the orientation rather than whether the feature exists. A deck whose first page
+     * is a portrait cover is the case that settles it: guessing from the shape would leave a
+     * presentation nobody could ask for on a document that is one.
+     *
+     * Not under a screen reader. A slide is turned by a swipe across it and a screen reader has
+     * that gesture for itself, so the mode would be one a reader could enter and not get out of,
+     * with nothing drawn on it to tap. The same standard as the video's controls, which stay up
+     * under a screen reader rather than fading.
+     *
+     * And not on the card that stands in for a document whose WebView is too old, as night mode
+     * and print are not: there is nothing on it to present.
+     */
+    private fun setUpPresentation(toolbar: MaterialToolbar, kind: FileKind) {
+        val item = toolbar.menu.findItem(R.id.action_present)
+        presentItem = item
+        val blocked = webViewFloorParamsFor(kind, webView?.settings?.userAgentString).isNotEmpty()
+        if (kind != FileKind.PDF || !pageGetsChannel(kind) || blocked || touchExplorationOn()) {
+            item.isVisible = false
+            return
+        }
+        item.isVisible = true
+        item.isChecked = false
+        item.setOnMenuItemClickListener {
+            askToPresent(!wantPresenting)
+            true
+        }
+    }
+
+    /**
+     * The presentation asked for, from the menu or from Back.
+     *
+     * Only the question goes over the channel. What the app does about it waits for the answer,
+     * because the page is the side that knows whether there is a document open to present; see
+     * [onPresenting]. Back is the one exception: the reader has said they are done, so the app's
+     * own parts come back at once rather than after a round trip they may never get.
+     */
+    private fun askToPresent(on: Boolean) {
+        wantPresenting = on
+        presentItem?.isChecked = on
+        presentationBackCallback.isEnabled = on
+        if (!on && presenting) {
+            presenting = false
+            presentation.exit()
+        }
+        tellPage(PortCommand.play(on))
+    }
+
+    /**
+     * What the page says it is doing, which is what turns the chrome off and on.
+     *
+     * [wide] is whether the page on screen is wider than it is tall, and it arrives again on every
+     * turn of a page: a document is free to mix them, and a deck with a portrait cover is the case
+     * that makes it worth asking twice. The phone is turned to match rather than the slide being
+     * left to fit a screen the wrong way round.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal fun onPresenting(on: Boolean, wide: Boolean) {
+        wantPresenting = on
+        presentItem?.isChecked = on
+        presentationBackCallback.isEnabled = on
+        if (!on) {
+            presenting = false
+            presentation.exit()
+            return
+        }
+        if (!presenting) {
+            presenting = true
+            // A search box left open would sit over the slide and take the first Back
+            closeSearchBar()
+            presentation.enter()
+        }
+        presentation.hold(PresentationChrome.orientation(wide))
     }
 
     /** Print, through Android's own print screen. Issue #45. */
@@ -606,6 +687,20 @@ open class ViewerActivity : AppCompatActivity() {
     }
 
     /**
+     * Back while a PDF is being presented puts the presentation away rather than leaving the
+     * document, which is the only way out of it: a slide has nothing drawn on it to tap.
+     *
+     * Added after the search bar's own callback, and that is what gives it priority: the
+     * dispatcher consults them in reverse order of addition, and the two are never on at once
+     * anyway - a search bar is closed before a document is presented. It switches itself off on
+     * the way out, so the next press falls through to the default and the predictive back
+     * animation works, the same as the one above.
+     */
+    private val presentationBackCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = askToPresent(false)
+    }
+
+    /**
      * Last page the document reported, and how many there are. Zero until it says, which under
      * Robolectric it never does, so tests set the count themselves.
      */
@@ -716,10 +811,41 @@ open class ViewerActivity : AppCompatActivity() {
     /** The viewer's own parts, dark with a document in night mode. See [NightChrome]. */
     private val nightChrome by lazy { NightChrome(this) }
 
+    /**
+     * The app around a PDF being presented. See [PresentationChrome].
+     *
+     * The title bar, the page readout and the scroll thumb all go for the length of it, and the
+     * readout has to be stopped rather than merely hidden: pdf.html reports the page it is showing
+     * on every turn of a page, and the pill would otherwise appear over each slide in turn.
+     */
+    private val presentation by lazy {
+        PresentationChrome(this) { away ->
+            documentChrome?.setVisible(!away)
+            if (away) {
+                pageFader.hideNow()
+                hideFastScrollNow()
+            }
+        }
+    }
+
     private val pageFader by lazy { AutoHide(pageIndicator, View.GONE) }
 
     /** Bound once the toolbar exists, shown once pdf.html has said how long the file is. */
     private var goToPageItem: MenuItem? = null
+
+    /** The presentation item, bound for a PDF and hidden for everything else. */
+    private var presentItem: MenuItem? = null
+
+    /**
+     * What the reader has asked for, and what the page has said it is doing.
+     *
+     * Two flags rather than one because the page is the side that knows whether there is a
+     * document to present. The menu is offered as soon as the file is, and a tap can land before
+     * the renderer has read a byte, so the app puts its own parts away when the answer comes back
+     * rather than when the question is asked. See [PortMessage.Presenting].
+     */
+    private var wantPresenting = false
+    private var presenting = false
 
     /**
      * Put the page readout on screen, or keep it there.
@@ -735,6 +861,9 @@ open class ViewerActivity : AppCompatActivity() {
      * because nothing else ever sets the total.
      */
     private fun showPageIndicator() {
+        // Nothing is drawn over a slide: see [PresentationChrome]. pdf.html reports the page it is
+        // showing on every turn of a page, and without this the pill would appear over each one.
+        if (presenting) return
         if (pageTotal < 2 || searchBarOpen) return
         // While the thumb has hold of it, where the pill sits and whether it is up at
         // all belong to the drag. The number is set where it changes, not here: this
@@ -1299,6 +1428,11 @@ open class ViewerActivity : AppCompatActivity() {
                         }
                         is PortMessage.SearchCount ->
                             onSearchCount?.invoke(said.at, said.total, said.done)
+                        // Only a PDF is presented, so any other page saying so is its document
+                        // talking, and is not given the phone to turn.
+                        is PortMessage.Presenting -> if (kind == FileKind.PDF) {
+                            onPresenting(said.on, said.wide)
+                        }
                         PortMessage.Locked -> if (kind == FileKind.PDF) printLocked = true
                         // Anything else came from the document rather than from
                         // the renderer, and is dropped without a word.
@@ -1852,6 +1986,14 @@ open class ViewerActivity : AppCompatActivity() {
         val goneMenu = findViewById<MaterialToolbar>(R.id.toolbar).menu
         goneMenu.findItem(R.id.action_search)?.isVisible = false
         goneMenu.findItem(R.id.action_night_mode)?.isVisible = false
+        // And the presentation, whose other end was in the renderer that just died: the phone is
+        // given back the way it was held and the app's own parts come back up, since the card
+        // that stands in for the document has to be readable
+        goneMenu.findItem(R.id.action_present)?.isVisible = false
+        wantPresenting = false
+        presenting = false
+        presentationBackCallback.isEnabled = false
+        presentation.exit()
         // And Print, which has no document to print until Reload brings it back
         goneMenu.findItem(R.id.action_print)?.isVisible = false
         closeSearchChannel()
