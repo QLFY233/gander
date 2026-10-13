@@ -50,7 +50,32 @@
 - `lintDebug` 对**新增**告警失败；存量 39 条在 `app/lint-baseline.xml`，**禁止**为了让构建通过而扩大 baseline。
 - 真机测试（`connectedDebugAndroidTest`）由 CI 夜间跑，**不作为**本地门禁。
 
-## 四、环境事实（不是待办）
+## 四、GitHub Actions 构建（规则与事实）
+
+**事实**
+
+- `.github/workflows/build.yml` — 触发 `push: branches: [main]` 与 `pull_request`，两个并行 job：
+  - `viewer`：容器 `mcr.microsoft.com/playwright/python:v1.62.0-noble`，`pip install -r tests/viewer/requirements.txt` → `pytest tests/viewer`；失败时上传 `tests/viewer/goldens/*.png`。
+  - `build`：`actions/checkout@v4` → `gradle/actions/wrapper-validation@v4` → `actions/setup-java@v4`（temurin **21**）→ `gradle/actions/setup-gradle@v4` → `./gradlew testDebugUnitTest` → `lintDebug` → `assembleDebug` → `assembleRelease` → `shasum -a 256`（哈希对应 APK 本体，GitHub 会再套一层 zip）→ 上传 artifact `gander-debug-apk`；失败时上传 `app/build/reports/`。
+- `.github/workflows/device.yml` — `schedule: 0 3 * * *` + `push: tags: ['v*']`，模拟器真机测试（不参与 PR 门禁）。
+- 无 keystore 时 CI 产出的 release APK 是**未签名**的；签名密钥取自 `keystore/gander.jks`（不入库）。
+- 本机无 Android SDK ⇒ **CI 是本仓库唯一的 APK 产出途径**。
+- 本仓库当前**没有 `origin`**，因此在建立自己的远程仓库之前，Actions 不会运行。
+
+**规则**
+
+1. 禁止删除或弱化 `wrapper-validation`，禁止引入未经校验的 Gradle wrapper jar。
+2. 禁止调整 `build` job 的步骤顺序使检查晚于产物生成：`testDebugUnitTest`、`lintDebug` 必须先于 `assembleDebug` / `assembleRelease`。
+3. 禁止为了让 CI 通过而扩大 `app/lint-baseline.xml`，禁止加 `-x` / `continue-on-error` / `|| true` 跳过任何门禁步骤。
+4. 禁止把签名口令、keystore、token 写进 workflow、仓库或 artifact：只能走 GitHub Secrets / 环境变量，keystore 仅允许在 runner 临时目录解码，且上传 artifact 前必须删除。
+5. 禁止在 workflow 中新增任何会外发用户文档或把仓库外内容上传/上报的步骤；CI 不得触碰任何用户文件。
+6. 禁止改动 `build.yml` 的 `concurrency` 语义（同一 ref 的旧运行必须被取消）。
+7. 面向 fork 的额外工作流必须是**新文件**（如 `.github/workflows/fork-build.yml`）；禁止修改上游 `build.yml` / `device.yml` 的既有语义。新工作流同样受第 2、3、4、5 条约束。
+8. Actions 必须使用 JDK 21（与依赖中的 Robolectric toolchain 要求一致）；禁止单独升级 JDK / Gradle / AGP 而不整体验证。
+9. 参考截图（goldens）只允许在 Linux runner 生成或更新；禁止在 Windows/macOS 本地 `--update-goldens` 后提交。
+10. viewer 测试容器镜像 tag 中的 playwright 版本必须与 `tests/viewer/requirements.txt` 里的 `playwright` 版本一致；改一个必须同改另一个。
+
+## 五、环境事实（不是待办）
 
 - 工具链：Gradle 8.13（wrapper）、AGP 8.13.2、Kotlin 2.1.0、`compileSdk`/`targetSdk` 36、`minSdk` 26、`versionName` 2.4、JDK **21**。
 - 本机 JDK：`C:\Program Files\Java\jdk-21.0.10`（可用）；默认 `java` 是 25，**不适用于**本工程（Robolectric 4.16.1 需 JDK 21），跑 Gradle 前需把 `JAVA_HOME` 指向 21。
@@ -58,9 +83,9 @@
 - 本机可用的本地验证：Python 3.11 + `pytest tests/viewer`（需 `pip install -r tests/viewer/requirements.txt` 与 `playwright install chromium`）。
 - 应用**不含任何 native 代码**（无 NDK、无 `jniLibs`）；引入 native 依赖是与第 7 条同级的重大变更。
 - 每个 viewer 页面自带固定 CSP；页面数量的变化会影响 `ViewerPolicyTest` 与 `tests/viewer/test_policy.py`。
-- Git 钩子与 `core.*` 本地配置**不在版本控制内**，重新 clone 后需按第六节恢复。
+- Git 钩子与 `core.*` 本地配置**不在版本控制内**，重新 clone 后需按第七节恢复。
 
-## 五、目录职责（只描述边界，不描述做法）
+## 六、目录职责（只描述边界，不描述做法）
 
 - `app/src/main/java/com/arjun/gander/ViewerActivity.kt` — 文档宿主与 WebView 边界（外来文档全部在此边界内被处理）。**与之相关的安全规则见第二章第 8/9 条。**
 - `app/src/main/java/com/arjun/gander/ViewerPolicy.kt` — CSP/策略的唯一权威副本。
@@ -73,7 +98,7 @@
 - `tests/viewer/**` — 浏览器内测试；`goldens/` 只允许 CI 更新。
 - `CONTRIBUTING.md` 与 `SECURITY.md` 是上游规矩，**与本文件冲突时以本文件为准**（本文件更严）。
 
-## 六、重新 clone 后必须恢复的本地状态（不可丢）
+## 七、重新 clone 后必须恢复的本地状态（不可丢）
 
 ```sh
 git remote rename origin upstream
