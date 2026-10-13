@@ -69,6 +69,8 @@
 - 上游 `build.yml` 只认 `push: main` 与 `pull_request`，**不在 `local/**` 上触发**；本地分支的构建入口是本仓库新增的 `.github/workflows/fork-build.yml`（`push: local/**` + `workflow_dispatch`）。
 - 签名 Secrets 名称固定：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_PASSWORD`；keystore 别名**必须**是 `gander`（`app/build.gradle.kts` 硬编码）。未配置 Secrets 时 release APK 是未签名产物。
 - 公开仓库的 **Actions 日志与 artifact 对任何登录用户可见**。
+- **CI 实测基线（2026-10-13，run `38342530722`，全绿）**：`Android APK` job 10m11s、`Viewer pages (browser)` job 5m14s（两 job 并行，总时长≈10m，首次运行无 Gradle 缓存）；产物 `fork-debug-apk` 11.0 MB、`fork-release-apk` 4.2 MB（未签名）；concurrency 已验证会取消同一 ref 的旧运行（首次 push 的 run `38342490701` 被后续 push 取消）。明显超过这个量级时先查 Gradle 缓存是否失效，而不是重试。
+- **已知告警（不阻塞，仅备注）**：`actions/setup-java@v4` 已弃用（官方建议 v5）；`actions/checkout@v4`、`actions/upload-artifact@v4`、`gradle/actions/*@v4` 仍指向 Node 20，被平台强制跑在 Node 24；`ubuntu-latest` 自 2026-10-19 起迁移到 Ubuntu 26。
 
 **规则**
 
