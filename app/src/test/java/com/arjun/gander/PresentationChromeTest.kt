@@ -243,6 +243,39 @@ class PresentationChromeTest {
     }
 
     /**
+     * The bar stays away for the length of the presentation, whatever asks for it back.
+     *
+     * Every other way this app has of bringing the title bar back is the window's focus - a menu
+     * opened from it, a box opened from that, and the app being left for another one - and a
+     * presentation outlives all of them. Left to answer a message and come back to, the bar came
+     * back with the document's own scrolling long gone: nothing had scrolled it there and nothing
+     * was going to scroll it away again.
+     */
+    @Test
+    fun theBarsStayAwayWhileASlideIsUp() {
+        val viewer = pdf()
+        viewer.openChannel()
+        viewer.onPresenting(on = true, wide = true)
+        assertThat(viewer.bars.visibility).isEqualTo(View.GONE)
+
+        // Out of the app and back in, which is a loss of focus and a gain of it
+        viewer.onWindowFocusChanged(false)
+        viewer.onWindowFocusChanged(true)
+        settle()
+        assertThat(viewer.bars.visibility).isEqualTo(View.GONE)
+
+        // And the document back at the top of itself, which brings the bar back at any other time
+        viewer.web.scrollTo(0, 300)
+        settle()
+        viewer.web.scrollTo(0, 0)
+        settle()
+        assertThat(viewer.bars.visibility).isEqualTo(View.GONE)
+
+        viewer.onPresenting(on = false, wide = false)
+        assertThat(viewer.bars.visibility).isEqualTo(View.VISIBLE)
+    }
+
+    /**
      * The page reports which slide it is on every time one is turned, and the pill is what that
      * report normally puts up. Over a slide there is nothing drawn at all.
      */

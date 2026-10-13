@@ -304,6 +304,28 @@ class DocumentChromeTest {
         assertThat(viewer.barUp).isTrue()
     }
 
+    /**
+     * A bar taken away for a slide comes back where it was, not at the top.
+     *
+     * The presentation happens over a document rather than resetting it: a reader who had
+     * scrolled the bar out of sight and then shown a slide finds the document as they left it,
+     * with the bar still out of the way rather than lying over the page they were reading.
+     */
+    @Test
+    fun aBarTakenAwayForASlideComesBackWhereItWas() {
+        val viewer = pdf()
+        viewer.swipeTo(600)
+        assertThat(viewer.barAway).isTrue()
+
+        viewer.documentChrome!!.setVisible(false)
+        assertThat(viewer.top.visibility).isEqualTo(View.GONE)
+        viewer.documentChrome!!.setVisible(true)
+        settle()
+
+        // Where the reader left it, rather than dropped back to the top of the document
+        assertThat(viewer.barAway).isTrue()
+    }
+
     @Test
     fun aPinchLeavesTheBar() {
         val viewer = pdf()

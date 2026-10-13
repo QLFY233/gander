@@ -1204,6 +1204,10 @@ open class ViewerActivity : AppCompatActivity() {
     }
 
     private fun showFastScroll() {
+        // Nothing is drawn over a slide, the thumb included: see [PresentationChrome]. A document
+        // that lays itself out again under a presentation - the phone turned, the app come back
+        // to - arrives here, and a thumb down the side of a slide is the thing the mode is for.
+        if (presenting) return
         thumbFader.show()
         if (!dragging) thumbFader.restartIdle()
     }
@@ -2170,6 +2174,11 @@ open class ViewerActivity : AppCompatActivity() {
         super.onWindowFocusChanged(hasFocus)
         videoChrome?.focusChanged(hasFocus)
         documentChrome?.focusChanged(hasFocus)
+        // The phone's bars come back over a slide when the app is left and are not always taken
+        // away again by coming back to it; see PresentationChrome.focusChanged. Guarded on
+        // [presenting] rather than asked of the chrome itself, so that a document that is not
+        // being presented never builds one.
+        if (presenting) presentation.focusChanged(hasFocus)
     }
 
     // A mouse wheel or a touchpad scrolling a document moves its title bar as a finger does. Seen

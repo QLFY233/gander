@@ -104,9 +104,18 @@ internal class DocumentChrome(
      * The bar's own place in it is left exactly where it was, so it comes back where the reader
      * had scrolled it to rather than at the top, and nothing is animated: a slide does not fade
      * in under a bar sliding away.
+     *
+     * [away] is what keeps it away, and it is not the same thing as the bar having scrolled itself
+     * out of sight. Every other way this bar has of coming back goes through show() - the reader
+     * scrolling up, the top of the document being reached, the window losing its focus to the
+     * notification shade - and a presentation outlives all of them: leave the app to answer a
+     * message and come back, and the app's own title bar is lying over the top of the slide.
      */
+    private var away = false
+
     fun setVisible(on: Boolean) {
-        top.visibility = if (on) View.VISIBLE else View.GONE
+        away = !on
+        if (on) place(top.translationY) else top.visibility = View.GONE
     }
 
     /** What the page has to be told once the channel is open, since it was told only the URL. */
@@ -205,7 +214,7 @@ internal class DocumentChrome(
 
     /** Up by as much as the document went down, and down by as much as it came back. */
     private fun follow(dy: Int) {
-        if (dy == 0 || held()) return
+        if (dy == 0 || away || held()) return
         val y = (top.translationY - dy).coerceIn(-top.height.toFloat(), 0f)
         if (y == top.translationY) return
         top.animate().cancel()
@@ -242,6 +251,7 @@ internal class DocumentChrome(
 
     /** All of the bar on screen, or none of it, in the time the rest of the way takes. */
     private fun show(visible: Boolean) {
+        if (away) return
         val height = top.height.toFloat()
         val y = if (visible || held()) 0f else -height
         top.animate().cancel()
@@ -262,7 +272,11 @@ internal class DocumentChrome(
     private fun place(y: Float) {
         top.translationY = y
         // Out of sight as well as out of the way, so nothing in it can be reached by a key
-        top.visibility = if (top.height > 0 && y <= -top.height) View.INVISIBLE else View.VISIBLE
+        top.visibility = when {
+            away -> View.GONE
+            top.height > 0 && y <= -top.height -> View.INVISIBLE
+            else -> View.VISIBLE
+        }
         tellWhere()
     }
 

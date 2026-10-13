@@ -83,6 +83,20 @@ internal class PresentationChrome(
     }
 
     /**
+     * The window's focus, which is when the phone's bars have to be asked for again.
+     *
+     * The request that hid them survives being left on most devices and most of the time, and not
+     * on all of them: the clock and the gesture handle come back over a slide that is otherwise the
+     * whole screen, and stay there until something asks them to go. Asked here rather than in
+     * onResume, which a dialog opened over the app arrives as too, and where asking would take the
+     * bars away from under it.
+     */
+    fun focusChanged(hasFocus: Boolean) {
+        if (!up || !hasFocus) return
+        bars.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    /**
      * Hold the phone at [orientation], or give it back to the phone for null.
      *
      * Called with the same answer on every turn of a page, since the page reports its shape each
