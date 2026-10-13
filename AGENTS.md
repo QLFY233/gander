@@ -12,6 +12,7 @@
 - 远程：`upstream` = 上游 URL（**fetch-only**）；**没有 `origin`**，本地提交暂不上传任何地方。
 - 分支：`main` = 上游镜像（**永不提交**）；工作分支 `local/*`。
 - 上游仓库的**提交历史、作者、文件内容均不属于本仓库**，本地改动必须与上游可区分。
+- **上游写权限实测（2026-10-13，`gh api repos/mokshablr/gander --jq .permissions`）：`push: false`、`admin: false`。** 本机 GitHub 身份对该仓库没有任何写权限——这是防误推上游的**最终保险**；本地 pushurl 禁用与 `.git/hooks/pre-push` 只负责“提前失败 + 给出可读错误”，重 clone 后会丢失，权限不会。
 
 ## 二、铁律（禁止 / 必须）
 
