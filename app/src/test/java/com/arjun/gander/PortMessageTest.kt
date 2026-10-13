@@ -31,6 +31,8 @@ class PortMessageTest {
         assertThat(PortCommand.barHeight("64")).isEqualTo("t64")
         assertThat(PortCommand.barGone("0")).isEqualTo("b0")
         assertThat(PortCommand.barGone("23.5")).isEqualTo("b23.5")
+        assertThat(PortCommand.play(true)).isEqualTo("s1")
+        assertThat(PortCommand.play(false)).isEqualTo("s0")
     }
 
     /**
@@ -50,9 +52,10 @@ class PortMessageTest {
             PortCommand.nightMode(true),
             PortCommand.barHeight("64"),
             PortCommand.barGone("0"),
+            PortCommand.play(true),
         ).map { it.take(1) }
         assertThat(verbs).containsNoDuplicates()
-        assertThat(verbs).containsExactly("q", "n", "p", "c", "g", "i", "t", "b")
+        assertThat(verbs).containsExactly("q", "n", "p", "c", "g", "i", "t", "b", "s")
     }
 
     /**
@@ -122,6 +125,32 @@ class PortMessageTest {
         assertThat(parsePortMessage("locked ")).isNull()
         assertThat(parsePortMessage(" locked")).isNull()
         assertThat(parsePortMessage("locked 1 0")).isNull()
+    }
+
+    // ---------------------------------------------------------------
+    // Inbound: the presentation
+    // ---------------------------------------------------------------
+
+    @Test
+    fun aPresentationIsRead() {
+        assertThat(parsePortMessage("present 1 1"))
+            .isEqualTo(PortMessage.Presenting(on = true, wide = true))
+        assertThat(parsePortMessage("present 1 0"))
+            .isEqualTo(PortMessage.Presenting(on = true, wide = false))
+        assertThat(parsePortMessage("present 0 0"))
+            .isEqualTo(PortMessage.Presenting(on = false, wide = false))
+    }
+
+    /**
+     * The two fields are flags written as one digit each, so nothing else reads as one.
+     * "true" and "2" are the two a page or a document might plausibly write instead.
+     */
+    @Test
+    fun aPresentationFieldThatIsNotADigitIsDropped() {
+        listOf("present true 0", "present 1 false", "present 2 0", "present 1 1 1",
+               "present 1", "present", "present  0").forEach { raw ->
+            assertThat(parsePortMessage(raw)).isNull()
+        }
     }
 
     // ---------------------------------------------------------------
