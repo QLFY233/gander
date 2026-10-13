@@ -1,0 +1,144 @@
+# fork 专用构建入口。
+#
+# 上游 build.yml 只认 `push: main` 与 `pull_request`，不会在 `local/**` 分支上跑，
+# 所以本文件是本地分支唯一的构建入口。这是新增文件：build.yml / device.yml 属上游
+# 语义，不得修改（AGENTS.md 铁律 7）。
+#
+# 受 AGENTS.md 第四章规则 1-5 约束：wrapper 校验不得移除、门禁必须先于产物生成、
+# 不得跳过 lint/测试、签名材料只走 Secrets 且上传前删除、不得外发任何用户数据。
+name: Fork build
+
+on:
+  push:
+    branches:
+      - 'local/**'
+  # 手动触发：Actions 页 → Fork build → Run workflow，选分支。
+  workflow_dispatch:
+
+# 同一 ref 的旧运行必须被取消（与上游 build.yml 的 concurrency 语义一致）。
+concurrency:
+  group: fork-build-${{ github.ref }}
+  cancel-in-progress: true
+
+# 只读 token：构建产物走 upload-artifact，不需要仓库写权限。
+permissions:
+  contents: read
+
+jobs:
+  # 上游把 viewer 页面单独在真实浏览器里测，本 job 与上游 build.yml 的 viewer job
+  # 等价：改 viewer 页面（docx.js / xlsx.js / pptx.js 等）后必须过这一关。
+  viewer:
+    name: Viewer pages (browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 与 tests/viewer/requirements.txt 的 playwright 版本保持一致（AGENTS.md 规则 10）。
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.62.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install
+        run: pip install -r tests/viewer/requirements.txt
+
+      - name: Viewer tests
+        run: pytest tests/viewer -q
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-viewer-screenshots
+          path: tests/viewer/goldens/*.png
+          retention-days: 7
+
+  build:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Secrets 经 env 中转后用 `env.X != ''` 判断，`secrets` 上下文不能直接用在 if 里。
+    env:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # wrapper jar 是跑在本仓库代码之前的二进制，必须校验（AGENTS.md 铁律 1）。
+      - uses: gradle/actions/wrapper-validation@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 仅当配置了 Secrets 时恢复签名材料。
+      # 别名必须与 app/build.gradle.kts 中硬编码的 "gander" 一致；
+      # 口令写进 ~/.gradle/gradle.properties（该文件的属性会被 build 脚本读取）。
+      - name: Restore signing keystore
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p keystore
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > keystore/gander.jks
+          mkdir -p "$HOME/.gradle"
+          {
+            echo "GANDER_STORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "GANDER_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+          } >> "$HOME/.gradle/gradle.properties"
+          echo "keystore restored (release build will be signed)"
+
+      # 门禁先于产物生成：编译错误或断言失败必须报成测试失败，而不是藏在 assemble 里
+      # （AGENTS.md 规则 2）。
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew lintDebug
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+
+      - name: Checksums
+        run: |
+          shasum -a 256 app/build/outputs/apk/*/*.apk
+
+      # 上传 artifact 之前必须删除签名材料（AGENTS.md 铁律 4）。
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f keystore/gander.jks
+          rm -f "$HOME/.gradle/gradle.properties"
+
+      - name: Signing status
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "release APK 已签名（keystore 来自 Secrets，已在 runner 内销毁）"
+          else
+            echo "未配置 KEYSTORE_BASE64：release APK 未签名，仅供检查，不能直接安装发布"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fork-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      # 无 keystore 时 release 产物是未签名的，仍然上传以便确认真实构建通过；
+      # 若构建失败则没有文件，忽略即可。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fork-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: ignore
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-reports
+          path: app/build/reports/
+          retention-days: 7
