@@ -69,8 +69,9 @@
 - 上游 `build.yml` 只认 `push: main` 与 `pull_request`，**不在 `local/**` 上触发**；本地分支的构建入口是本仓库新增的 `.github/workflows/fork-build.yml`（`push: local/**` + `workflow_dispatch`）。
 - 签名 Secrets 名称固定：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_PASSWORD`；keystore 别名**必须**是 `gander`（`app/build.gradle.kts` 硬编码）。未配置 Secrets 时 release APK 是未签名产物。
 - 公开仓库的 **Actions 日志与 artifact 对任何登录用户可见**。
-- **CI 实测基线（2026-10-13，run `38342530722`，全绿）**：`Android APK` job 10m11s、`Viewer pages (browser)` job 5m14s（两 job 并行，总时长≈10m，首次运行无 Gradle 缓存）；产物 `fork-debug-apk` 11.0 MB、`fork-release-apk` 4.2 MB（未签名）；concurrency 已验证会取消同一 ref 的旧运行（首次 push 的 run `38342490701` 被后续 push 取消）。明显超过这个量级时先查 Gradle 缓存是否失效，而不是重试。
-- **已知告警（不阻塞，仅备注）**：`actions/setup-java@v4` 已弃用（官方建议 v5）；`actions/checkout@v4`、`actions/upload-artifact@v4`、`gradle/actions/*@v4` 仍指向 Node 20，被平台强制跑在 Node 24；`ubuntu-latest` 自 2026-10-19 起迁移到 Ubuntu 26。
+- **CI 实测基线（2026-10-13，run `38342530722` 首次 / `38343594216` 缓存命中）**：`Android APK` job 10m11s → **6m16s**（Gradle 缓存命中后），`Viewer pages (browser)` job 5m14s → 5m05s；两 job 并行，总时长≈最长那个。产物 `fork-debug-apk` ≈11.0 MB、`fork-release-apk` ≈4.2 MB。明显超出这个量级时先查 Gradle 缓存是否失效，而不是重试。
+- **已知告警（不阻塞，仅备注）**：`setup-java` 已升级到 `@v5`；剩下 `actions/checkout@v4`、`actions/upload-artifact@v4`、`gradle/actions/*@v4` 仍指向 Node 20（被平台强制跑在 Node 24）；`ubuntu-latest` 自 2026-10-19 起迁移到 Ubuntu 26。
+- **签名材料保管**：release 签名由本机密钥库完成（别名固定 `gander`，路径 `keystore/gander.jks`，已被 `.gitignore` 覆盖）；口令只允许存在三处：`~/.gradle/gradle.properties`（本地构建）、**仓库外**备份目录、GitHub Secrets（`KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_PASSWORD`）。
 
 **规则**
 
@@ -87,6 +88,7 @@
 11. `fork-build.yml` 同样受第 1、2、3、4、5 条约束：禁止移除其中的 `wrapper-validation`、`testDebugUnitTest`、`lintDebug`，禁止调整顺序使构建先于检查。
 12. **公开仓库的日志与 artifact 一律视为公开**：禁止在 workflow 中打印凭据/口令/token，禁止把 APK 之外的仓库内容（尤其用户文档、内部笔记、临时数据）上传为 artifact。
 13. **不得把未启用的 workflow 当作门禁依据**：`build.yml` / `device.yml` 在手动启用前不会运行；本地分支的门禁只认 `fork-build.yml` 的结果。
+14. **签名密钥不可更换、不可丢失**：密钥库与口令只允许存在于 `~/.gradle/gradle.properties`、仓库外的备份目录、GitHub Secrets 三处；`keystore/` 已被 `.gitignore` 覆盖，**禁止 `git add -f`**；更换密钥会使已安装用户无法升级，禁止在未明确要求的情况下重新生成密钥库。
 
 ## 五、环境事实（不是待办）
 
