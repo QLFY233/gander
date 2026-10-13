@@ -83,9 +83,10 @@ jobs:
           set -euo pipefail
           umask 077
           mkdir -p keystore
-          # Secret 里可能带 CRLF（例如用 PowerShell 的管道写 gh secret set，实测会带上）：
-          # GNU base64 只在 LF 处换行，遇到 CR 就报 "invalid input"，所以先剥掉一切空白。
-          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \t\r\n' | base64 -d > keystore/gander.jks
+          # Secret 可能被 PowerShell 管道按 UTF-16LE 写入（ASCII 字符间夹 NUL）或带 CRLF：
+          # 不管哪种脏字符，直接只保留 base64 合法字符，其余全删。
+          printf '%s' "$KEYSTORE_BASE64" | tr -cd 'A-Za-z0-9+/=' | base64 -d > keystore/gander.jks
+          echo "decoded keystore bytes: $(wc -c < keystore/gander.jks)"
           test -s keystore/gander.jks || { echo "ERROR: 密钥库解码后为空，请检查 KEYSTORE_BASE64"; exit 1; }
           store_pw=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n')
           key_pw=$(printf '%s' "${KEY_PASSWORD:-$KEYSTORE_PASSWORD}" | tr -d '\r\n')
