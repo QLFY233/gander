@@ -83,13 +83,20 @@ jobs:
           set -euo pipefail
           umask 077
           mkdir -p keystore
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > keystore/gander.jks
+          # Secret 里可能带 CRLF（例如用 PowerShell 的管道写 gh secret set，实测会带上）：
+          # GNU base64 只在 LF 处换行，遇到 CR 就报 "invalid input"，所以先剥掉一切空白。
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \t\r\n' | base64 -d > keystore/gander.jks
+          test -s keystore/gander.jks || { echo "ERROR: 密钥库解码后为空，请检查 KEYSTORE_BASE64"; exit 1; }
+          store_pw=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n')
+          key_pw=$(printf '%s' "${KEY_PASSWORD:-$KEYSTORE_PASSWORD}" | tr -d '\r\n')
           mkdir -p "$HOME/.gradle"
           {
-            echo "GANDER_STORE_PASSWORD=$KEYSTORE_PASSWORD"
-            echo "GANDER_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+            echo "GANDER_STORE_PASSWORD=$store_pw"
+            echo "GANDER_KEY_PASSWORD=$key_pw"
           } >> "$HOME/.gradle/gradle.properties"
-          echo "keystore restored (release build will be signed)"
+          # 提前验证密钥库与口令：签名材料有问题要在这里失败，而不是等 6 分钟后的 assembleRelease。
+          keytool -list -keystore keystore/gander.jks -storepass "$store_pw" > /dev/null
+          echo "keystore restored and verified (release build will be signed)"
 
       # 门禁先于产物生成：编译错误或断言失败必须报成测试失败，而不是藏在 assemble 里
       # （AGENTS.md 规则 2）。
