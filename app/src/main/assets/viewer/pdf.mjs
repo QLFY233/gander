@@ -664,7 +664,7 @@ function setNight(on) {
      screen is drawn again here, in the mode the reader has just chosen. Reachable with
      the app's toolbar out of sight only over the channel, which is what happens when the
      setting arrives from the other side of a restart. */
-  if (play.on) playShow(play.at);
+  if (play.on) { play.gen++; playShow(play.at); }
 }
 
 function draw(slot) {
@@ -2178,6 +2178,10 @@ function onCommand(msg) {
      */
     var n = Math.floor(Number(msg.slice(1)));
     if (!doc || !slots.length || !(n >= 1 && n <= slots.length)) return;
+    /* The presentation is not the flow. A jump made while it is up is a turn to that page:
+       placing the document underneath would move something nobody can see and be thrown
+       away by the exit, which puts the document back at play.at. */
+    if (play.on) { playShow(n); return; }
     var target = slots[n - 1];
     place(target).then(function () {
       want(target);
@@ -2532,13 +2536,15 @@ function unobservePages() {
  * narrowing .pg, and playFrame() below for why the box is measured against the visual
  * viewport.
  *
- * One canvas, one render, at the resolution the screen actually has. The document's own
- * pages are given up while this is up - unobservePages() and playDropDocument() - so a
- * presentation costs what a slide costs and not what a slide plus a band of pages costs,
- * which on a long document is the difference between about 10 MB and about 80.
+ * Three canvases at the resolution the screen actually has, and never a render into the one
+ * that is on screen: see playShow() for why a turn is a swap of two finished slides rather
+ * than a page being drawn into the canvas the reader is looking at, and playFetch() for
+ * where the finished ones come from. The document's own pages are given up while this is
+ * up - unobservePages() and playDropDocument() - so a presentation costs what three slides
+ * cost and not what a slide plus a band of pages costs, which on a long document is the
+ * difference between about 30 MB and about 80.
  */
 var playLayer = document.getElementById("vw-play");
-var playCanvas = document.getElementById("vw-play-canvas");
 
 /*
  * How far across a swipe has to go, in CSS px, before it turns the page.
@@ -2554,16 +2560,23 @@ var SWIPE_MIN = 48;
 /*
  * What the presentation is doing.
  *
- * "at" is the page on screen, counting from one, and 0 while nothing is up. "unscaled"
- * is that page's viewport at scale 1, which is where the app is told whether the slide
- * is wider than it is tall: the two numbers that decide the orientation the app holds
- * the phone at are read off it. "frame" is the box the last fit was measured against,
- * so a move of the visual viewport that did not change its size costs nothing.
+ * "at" is the page being presented, counting from one, and 0 while nothing is up.
+ * "unscaled" is that page's viewport at scale 1, which is where the app is told whether
+ * the slide is wider than it is tall: the two numbers that decide the orientation the app
+ * holds the phone at are read off it. "frame" is the box the last fit was measured
+ * against, so a move of the visual viewport that did not change its size costs nothing.
  *
  * "wanted" is a request that arrived before there was a document to present, which is
  * what a tap on the app's menu in the first moments after opening looks like. It is
  * honoured at the foot of the load chain rather than dropped, because by then the app
  * has put its own bar away and is waiting to be told what happened.
+ *
+ * "view" and "slides" are the slides that have been drawn: the one on screen and, either
+ * side of it, the pages a turn is most likely to go to. "render" is the one being drawn
+ * now, which is a slide of its own until it lands. "gen" counts fits and night settings,
+ * so that a slide drawn for a box or a colour this presentation is no longer in is
+ * recognised as stale without four numbers being compared on every look. "broken" holds
+ * the pages pdf.js would not draw, so that the neighbour pass does not ask again forever.
  */
 var play = {
   on: false,
@@ -2572,8 +2585,11 @@ var play = {
   drawn: 0,
   unscaled: null,
   frame: null,
-  task: null,
-  page: null,
+  gen: 0,
+  view: null,
+  slides: [],
+  render: null,
+  broken: {},
   observers: false
 };
 
@@ -2629,93 +2645,345 @@ function playPlace() {
     playLayer.style.width = f.width + "px";
     playLayer.style.height = f.height + "px";
   }
-  if (resized && play.at >= 1) playShow(play.at);
-}
-
-/* Stop the render in flight. The page object is left where it is; see playShow(). */
-function playCancel() {
-  var task = play.task;
-  play.task = null;
-  /* The bitmap on the canvas is now the one before the page being asked for, whatever it
-     was, so the two numbers agree again only once a render lands. */
-  play.drawn = 0;
-  if (task) task.cancel();
+  if (resized && play.at >= 1) {
+    /* Every slide that is ready was fitted to the box as it was. The count goes up rather
+       than the slides being dropped here, because playShow() is what knows which of them
+       are still worth keeping and the slide on screen is one of them: it is restretched
+       and stays up until a replacement at the new fit lands. */
+    play.gen++;
+    playShow(play.at);
+  }
 }
 
 /*
- * Draw the slide for page [n], whole, centred, at the resolution of the screen.
+ * Stop the render in flight, and give its canvas back.
  *
- * Three scales again, and they are not the same number, for the same reason as in draw()
- * and one more. "fit" is CSS px per page unit and is what makes the slide whole: the
- * smaller of the two ratios, so the longer of the two dimensions meets the screen and
- * the other is letterboxed. liveScale() is canvas px per CSS px, and it is the uncapped
- * one deliberately - baseScale() stops at DPR_FALLBACK, which is 2, and a phone turned
- * on its side is about 2400 physical px across 980 CSS px, so a slide drawn at baseScale
- * would be at four fifths of the screen's resolution and visible as such. There is one
- * canvas here rather than a band of them, which is what makes the uncapped scale
- * affordable: 2400 by 1080 is about 10 MB and the band this replaced was several times
- * that.
- *
- * The canvas keeps the CSS size the fit came to while its backing store is that fit at
- * the screen's resolution, which is the same arrangement .pg and its canvas have.
+ * Every render this stops is one the presentation has decided against: a turn towards
+ * another page, or the end of the presentation. The flag is what tells the rejection that
+ * follows - task.cancel() rejects the render's promise rather than throwing - that this
+ * was a decision and not a page pdf.js could not draw, so that the failure path neither
+ * records the page as broken nor starts a neighbour in its place.
  */
-function playShow(n) {
-  if (!play.on || !doc) return;
-  n = Math.max(1, Math.min(slots.length, Math.floor(n) || 1));
-  play.at = n;
-  var f = play.frame || playFrame();
-  if (!f) return;
-  /* The page being left, given up once its replacement is in hand rather than now: a
-     render cancelled and a page cleaned up in the same turn leaves the screen showing
-     the old slide out of a canvas that has been emptied, which reads as a flash. */
-  var left = play.page;
-  playCancel();
+function playRenderStop() {
+  var entry = play.render;
+  if (!entry) return;
+  play.render = null;
+  entry.stopped = true;
+  if (entry.task) entry.task.cancel();
+  entry.canvas.width = 0;
+  entry.canvas.height = 0;
+  if (entry.page) entry.page.cleanup();
+}
+
+/*
+ * The scales a slide is drawn at, from the page's own size and the box it is fitted to.
+ *
+ * Three scales, and they are not the same number, for the same reason as in draw() and
+ * one more. "fit" is CSS px per page unit and is what makes the slide whole: the smaller
+ * of the two ratios, so the longer of the two dimensions meets the screen and the other
+ * is letterboxed. liveScale() is canvas px per CSS px, and it is the uncapped one
+ * deliberately - baseScale() stops at DPR_FALLBACK, which is 2, and a phone turned on its
+ * side is about 2400 physical px across 980 CSS px, so a slide drawn at baseScale would
+ * be at four fifths of the screen's resolution and visible as such. within() is the
+ * ceiling draw() applies for the same reason it applies it there: a document with one
+ * enormous page in it is not allowed to ask for a canvas the device will refuse.
+ */
+function playScale(unscaled, f) {
+  var fit = Math.min(f.width / unscaled.width, f.height / unscaled.height);
+  var scale = fit * liveScale();
+  return {
+    fit: fit,
+    scale: scale * within(unscaled.width * scale, unscaled.height * scale, BASE_MAX_PIXELS)
+  };
+}
+
+/*
+ * A canvas to draw a slide on, and the giving of one back.
+ *
+ * New rather than pooled, and emptied rather than left to the collector. An empty canvas
+ * costs nothing until something is drawn on it, and one whose bitmap has been released has
+ * nothing left to hoard: a turn across a document is a canvas allocated and a canvas
+ * freed, and a flick that leaves a dozen of them waiting for a collection is a flick that
+ * ends in an out-of-memory.
+ */
+function playTake() {
+  return document.createElement("canvas");
+}
+
+function playGive(slide) {
+  if (!slide) return;
+  if (slide.canvas.parentNode) slide.canvas.parentNode.removeChild(slide.canvas);
+  slide.canvas.width = 0;
+  slide.canvas.height = 0;
+  if (slide.page) slide.page.cleanup();
+}
+
+/*
+ * The slide for page [n], if one is ready and still drawn for the box and the night
+ * setting this presentation is in.
+ *
+ * The page on screen counts, and that is not an oversight: the slide a turn back goes to
+ * is the one just left, which playDisplay() kept for exactly this.
+ */
+function playReady(n) {
+  if (play.view && play.view.n === n && play.view.gen === play.gen) return play.view;
+  for (var i = 0; i < play.slides.length; i++) {
+    var s = play.slides[i];
+    if (s.n === n && s.gen === play.gen) return s;
+  }
+  return null;
+}
+
+/*
+ * Everything that is not the page being presented, nor the page before or after it, goes
+ * back. Three slides is what a presentation that can be turned both ways needs; a fourth
+ * is a screenful of memory spent on a page four turns away.
+ *
+ * The page being presented is kept even when it is still only waiting: a turn sets play.at
+ * before it looks for a slide, so the slide it is about to show is one of these.
+ */
+function playTrim() {
+  for (var i = play.slides.length - 1; i >= 0; i--) {
+    var s = play.slides[i];
+    if (s.gen !== play.gen || (s.n !== play.at && Math.abs(s.n - play.at) !== 1)) {
+      play.slides.splice(i, 1);
+      playGive(s);
+    }
+  }
+}
+
+/*
+ * The slide's own CSS size, which is the fit in CSS px while its backing store is that fit
+ * at the screen's own resolution - the same arrangement .pg and its canvas have.
+ *
+ * This is also where the presentation's record of what it is showing is brought up to
+ * date, because these two numbers and the page they belong to are the same fact.
+ * play.drawn is the page whose bitmap is on the canvas, and it is a different number from
+ * play.at only while a turn is waiting for a render.
+ */
+function playSized(slide) {
+  slide.canvas.style.width = slide.cssW + "px";
+  slide.canvas.style.height = slide.cssH + "px";
+  play.drawn = slide.n;
+  play.unscaled = slide.unscaled;
+}
+
+/*
+ * Put a slide on screen, and take the one that was there off it.
+ *
+ * The two canvases trade places rather than one being drawn into the other. A slide is a
+ * screenful of pixels, and copying one into another on every turn is a second screenful
+ * moved for nothing when the element itself can be the one that is attached. The id goes
+ * with it, because "the canvas on screen" is the one thing a test, or a reader of this
+ * file, wants to be able to name.
+ *
+ * The slide going out is the page just left, so it is kept rather than given up, and a
+ * turn back to it is then the same swap as a turn forward. It goes back only if it is
+ * neither the page before this one nor the page after it, which is what a jump over
+ * several pages leaves behind.
+ */
+function playDisplay(slide) {
+  var out = play.view;
+  if (out !== slide) {
+    /* Out of the waiting list, because it is the slide on screen now: one canvas named
+       twice is a canvas given back while it is still being shown. */
+    var at = play.slides.indexOf(slide);
+    if (at >= 0) play.slides.splice(at, 1);
+    if (out) {
+      out.canvas.removeAttribute("id");
+      out.canvas.remove();
+    }
+    slide.canvas.id = "vw-play-canvas";
+    playLayer.appendChild(slide.canvas);
+    play.view = slide;
+    if (out) {
+      if (out.gen === play.gen && Math.abs(out.n - play.at) === 1) play.slides.push(out);
+      else playGive(out);
+    }
+  }
+  playSized(slide);
+}
+
+/*
+ * Restretch the slide on screen to the box as it is now.
+ *
+ * Only reached when the box has changed shape, which is a turn of the phone, and it is the
+ * CSS size alone: a backing store cannot be resized without losing what is in it, so the
+ * slide is shown at the new size from the pixels it has until its replacement lands. A
+ * soft slide for the length of a render reads as a turn; a slide left at the old size in a
+ * box that no longer matches it reads as a bug.
+ */
+function playReshape() {
+  var s = play.view;
+  var f = play.frame;
+  if (!s || !f || !s.unscaled || s.gen === play.gen) return;
+  var fit = Math.min(f.width / s.unscaled.width, f.height / s.unscaled.height);
+  s.cssW = s.unscaled.width * fit;
+  s.cssH = s.unscaled.height * fit;
+  playSized(s);
+}
+
+/*
+ * Draw page [n] into a canvas of its own, and put the result where it belongs.
+ *
+ * One render at a time, and it is not always the page being presented: a turn towards a
+ * page whose slide is ready is a swap of two canvases and nothing else, and this is the
+ * render that made it ready. What becomes of the result is playLand()'s to decide, and it
+ * is decided when it lands rather than now, because a turn can arrive while it is running.
+ *
+ * A render in flight for the page a turn is going to is left alone and lands on screen; a
+ * render for any other page is stopped first, because the turn has said what the next
+ * slide is and drawing the wrong one first is a fifth of a second spent on nothing.
+ */
+function playRender(n) {
+  var entry = {
+    n: n, gen: play.gen, canvas: playTake(), task: null, page: null, stopped: false
+  };
+  play.render = entry;
   doc.getPage(n).then(function (page) {
-    /* A later turn or the end of the presentation got here first. */
-    if (!play.on || play.at !== n) return;
-    if (left && left !== page) left.cleanup();
-    play.page = page;
-
+    if (play.render !== entry) return;
+    var f = play.frame || playFrame();
+    if (!f) { playRenderDone(entry); return; }
     var unscaled = page.getViewport({ scale: 1 });
-    play.unscaled = unscaled;
-    /* Said before the render rather than after it, because this is what the app turns
-       the phone for, and a slide shown sideways while the phone turns is the one thing
-       worth doing early. */
-    playReport();
-
-    var fit = Math.min(f.width / unscaled.width, f.height / unscaled.height);
-    var scale = fit * liveScale();
-    scale *= within(unscaled.width * scale, unscaled.height * scale, BASE_MAX_PIXELS);
-    var viewport = unscaled.clone({ scale: scale });
-    playCanvas.width = viewport.width;
-    playCanvas.height = viewport.height;
-    playCanvas.style.width = String(unscaled.width * fit) + "px";
-    playCanvas.style.height = String(unscaled.height * fit) + "px";
-    var ctx = playCanvas.getContext("2d");
+    var s = playScale(unscaled, f);
+    var viewport = unscaled.clone({ scale: s.scale });
+    entry.canvas.width = viewport.width;
+    entry.canvas.height = viewport.height;
+    entry.cssW = unscaled.width * s.fit;
+    entry.cssH = unscaled.height * s.fit;
+    entry.unscaled = unscaled;
+    entry.page = page;
+    /* Said before the render rather than after it, because this is what the app turns the
+       phone for, and a slide shown sideways while the phone turns is the one thing worth
+       doing early. Only for the page being presented: a neighbour's shape is not news. */
+    if (entry.n === play.at && entry.gen === play.gen) {
+      play.unscaled = unscaled;
+      playReport();
+    }
+    var ctx = entry.canvas.getContext("2d");
     var task = page.render({
       canvasContext: ctx,
       viewport: viewport,
       /* As in draw(), and only when it is going to be used. */
       recordImages: inverted
     });
-    play.task = task;
+    entry.task = task;
     return task.promise.then(function () {
-      if (play.task !== task) return;
-      play.task = null;
+      if (play.render !== entry) return;
       if (inverted) {
-        var quads = imageQuads(page, playCanvas.width, 0, playCanvas.height, 0);
+        var quads = imageQuads(page, entry.canvas.width, 0, entry.canvas.height, 0);
         var sample = quads.length ? pageSample(ctx) : null;
         recolour(ctx, sample
           ? quads.filter(function (q) { return !looksLikePaper(sample, q); })
           : []);
       }
-      play.drawn = n;
-    }, function () {
-      /* Cancelled or genuinely broken. Nothing to put back: the canvas holds whatever
-         the last slide did, and the next turn draws over it. */
-      if (play.task === task) play.task = null;
+      playRenderDone(entry);
+      playLand(entry);
+    }, function (e) {
+      if (entry.stopped) return;
+      if (play.render === entry) playRenderDone(entry);
+      entry.canvas.width = 0;
+      entry.canvas.height = 0;
+      if (entry.page) entry.page.cleanup();
+      /* A page that will not draw is not asked for again on the off chance; see
+         playNeighbour(). Cancelling is not failing, and only the second is recorded. */
+      if (!e || e.name !== "RenderingCancelledException") play.broken[n] = true;
+      playFetch();
     });
   });
+}
+
+function playRenderDone(entry) {
+  if (play.render === entry) play.render = null;
+}
+
+/*
+ * A finished render: on screen if it is the page being presented, kept if it is one of
+ * that page's neighbours, and given back if the presentation has moved on since it began.
+ */
+function playLand(entry) {
+  var slide = {
+    n: entry.n, gen: entry.gen, canvas: entry.canvas, page: entry.page,
+    cssW: entry.cssW, cssH: entry.cssH, unscaled: entry.unscaled
+  };
+  if (slide.gen === play.gen && slide.n === play.at) {
+    playDisplay(slide);
+  } else if (slide.gen === play.gen && Math.abs(slide.n - play.at) === 1) {
+    /* One slide per page. A turn away and back can leave the page this was started for
+       already ready, and two canvases holding it is one canvas too many. */
+    for (var i = play.slides.length - 1; i >= 0; i--) {
+      if (play.slides[i].n === slide.n) playGive(play.slides.splice(i, 1)[0]);
+    }
+    play.slides.push(slide);
+  } else {
+    playGive(slide);
+  }
+  playFetch();
+}
+
+/*
+ * The neighbour that is not ready yet, or 0 when both are.
+ *
+ * The page after this one before the page before it. A document being presented is read
+ * forwards, and a render takes long enough that which of the two goes first is the
+ * difference between flicking through a deck and flicking through one that stops every
+ * other slide.
+ */
+function playNeighbour() {
+  var want = [play.at + 1, play.at - 1];
+  for (var i = 0; i < want.length; i++) {
+    var n = want[i];
+    if (n < 1 || n > slots.length || play.broken[n]) continue;
+    if (!playReady(n)) return n;
+  }
+  return 0;
+}
+
+/*
+ * Get the neighbour ready, so that the turn towards it is a swap rather than a wait.
+ *
+ * Called whenever the presentation settles: after a slide lands, after a turn that was a
+ * swap, and after a render that failed. One at a time, because pdf.js draws on the main
+ * thread and two renders at once are two renders half as fast.
+ */
+function playFetch() {
+  if (!play.on) return;
+  playTrim();
+  if (play.render) return;
+  var n = playNeighbour();
+  if (n) playRender(n);
+}
+
+/*
+ * Show page [n].
+ *
+ * A ready slide first: a turn towards one is a swap of two canvases and nothing else,
+ * which is the whole of what drawing the neighbours ahead of time is for.
+ *
+ * A page that is not ready leaves the slide that is up where it is until there is a
+ * finished one to replace it. The alternative - empty the canvas and draw into it - is
+ * what a reader sees as a flicker: pdf.js fills the page white and then runs the display
+ * list over it, so the slide goes, a white rectangle arrives, and the page assembles
+ * itself across it. A swipe that does nothing for a fifth of a second and then turns the
+ * page is worth more than one that turns it into a white rectangle and then into a page.
+ */
+function playShow(n) {
+  if (!play.on || !doc) return;
+  n = Math.max(1, Math.min(slots.length, Math.floor(n) || 1));
+  play.at = n;
+  playTrim();
+  var ready = playReady(n);
+  if (ready) {
+    playDisplay(ready);
+    playReport();
+    playFetch();
+    return;
+  }
+  playReshape();
+  if (!play.render || play.render.n !== n || play.render.gen !== play.gen) {
+    playRenderStop();
+    playRender(n);
+  }
 }
 
 /*
@@ -2772,8 +3040,11 @@ function playEnter() {
   if (!doc || !slots.length) { play.wanted = true; return; }
   play.on = true;
   play.at = 0;
+  play.drawn = 0;
   play.unscaled = null;
   play.frame = null;
+  play.gen++;
+  play.broken = {};
   /* Remembered, so that a document of one page - which has no observers to begin with -
      does not acquire them on the way out. */
   play.observers = !!pageObservers;
@@ -2795,13 +3066,14 @@ function playLeave() {
   play.wanted = false;
   if (!play.on) return;
   play.on = false;
-  playCancel();
-  if (play.page) { play.page.cleanup(); play.page = null; }
+  playRenderStop();
+  /* Every slide goes, the one on screen included: a slide is a canvas and a canvas is a
+     page's worth of pixels, and the document underneath is about to want them back. */
+  playGive(play.view);
+  play.view = null;
+  for (var i = 0; i < play.slides.length; i++) playGive(play.slides[i]);
+  play.slides.length = 0;
   playLayer.hidden = true;
-  playCanvas.width = 0;
-  playCanvas.height = 0;
-  playCanvas.style.width = "";
-  playCanvas.style.height = "";
   var at = play.at;
   play.at = 0;
   play.drawn = 0;

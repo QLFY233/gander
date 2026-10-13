@@ -523,9 +523,11 @@
   #vw-play[hidden] { display: none; }
   /*
    * The slide. Its CSS size is the fit in CSS px and its backing store is that fit at
-   * the screen's own resolution, both written inline as it is drawn; see playShow().
+   * the screen's own resolution, both written inline as it is drawn; see playSized().
    * Nothing is said about it here beyond that it is a block, so the flex box centres it
-   * and the letterboxing falls out of the two numbers rather than out of a rule.
+   * and the letterboxing falls out of the two numbers rather than out of a rule. Only one
+   * of the presentation's slides is ever a child of this box; the rest are canvases being
+   * held ready, and the id goes with whichever one is on screen.
    */
   #vw-play > canvas { display: block; }
 </style>
@@ -573,7 +575,7 @@
  * the page and nothing else, and the app puts the page number in its own bar, which is
  * over this and out of the way while it is up.
  -->
-<div id="vw-play" hidden aria-hidden="true"><canvas id="vw-play-canvas"></canvas></div>
+<div id="vw-play" hidden aria-hidden="true"></div>
 <script src="app.js"></script>
 <script src="pdf-setup.js"></script>
 <script nomodule src="pdf-nomodule.js"></script>

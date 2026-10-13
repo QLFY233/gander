@@ -579,3 +579,96 @@ def play_centre(page):
         "return [r.x + r.width / 2, r.y + r.height / 2]; }"
     )
     return box
+
+
+# A swipe, or several, dispatched and read inside the page in one turn of the event loop.
+# See swipe_within() for why this exists next to touch_gesture().
+_SWIPE_WITHIN = """([dx, swipes]) => {
+  const l = document.getElementById('vw-play');
+  const r = l.getBoundingClientRect();
+  const x = r.x + r.width / 2, y = r.y + r.height / 2;
+  const at = (cx) => new Touch({identifier: 1, target: l, clientX: cx, clientY: y});
+  const one = () => {
+    const say = (type, list) => l.dispatchEvent(new TouchEvent(type, {
+      bubbles: true, cancelable: true, touches: list, targetTouches: list, changedTouches: list,
+    }));
+    say('touchstart', [at(x - dx / 2)]);
+    say('touchend', [at(x + dx / 2)]);
+    const p = l._play;
+    return {
+      on: p.on, at: p.at, drawn: p.drawn, view: p.view && p.view.n,
+      rendering: p.render ? p.render.n : 0, slides: p.slides.map(s => s.n),
+      held: look(window.__vwHeld),
+    };
+  };
+  const look = (c) => {
+    if (!c) return null;
+    const out = {connected: c.isConnected, w: c.width, h: c.height, corner: null};
+    if (c.width && c.height) {
+      const d = c.getContext('2d').getImageData(2, 2, 1, 1).data;
+      out.corner = [d[0], d[1], d[2]];
+    }
+    return out;
+  };
+  const seen = [];
+  for (let i = 0; i < swipes; i++) {
+    /* Kept just before each swipe, so that the answer says what became of the slide the
+       reader was looking at at the moment the swipe was handled. */
+    window.__vwHeld = document.getElementById('vw-play-canvas');
+    seen.push(one());
+  }
+  return seen;
+}"""
+
+
+def swipe_within(page, dx=-240, swipes=1):
+    """
+    [swipes] swipes in a row, and what the presentation was doing during each of them.
+
+    Built in the page and read in the same turn rather than sent as real input, which is
+    what touch_gesture() does and is the right way to test a gesture. What this is for is
+    the moment between a swipe and the slide it asks for, and a round trip out to Python
+    and back is several frames long - long enough for the render to land and for the answer
+    to be about the state after the turn rather than during it. [dx] is how far the finger
+    travelled, negative being right to left, which is the way a page is turned.
+
+    Each answer carries "held": the canvas that was on screen when that swipe was handled,
+    read straight afterwards, so that what became of the slide can be asked about without
+    another round trip. held_slide() reads the last of them again later on, for the
+    question of what became of it once the render it was waiting for landed.
+    """
+    return page.evaluate(_SWIPE_WITHIN, [dx, swipes])
+
+
+def play_slides(page):
+    """
+    The pages the presentation has a slide ready for, on screen included.
+
+    The number of them is the presentation's memory: a slide is a canvas and a canvas is a
+    screenful of pixels, so this is what keeps a flick through a document from ending in an
+    out-of-memory, and it is checked rather than assumed.
+    """
+    return page.evaluate(
+        "() => { const p = document.getElementById('vw-play')._play;"
+        "const ns = p.slides.map(s => s.n);"
+        "if (p.view) ns.push(p.view.n);"
+        "return ns; }"
+    )
+
+
+def held_slide(page):
+    """
+    The canvas the last swipe left on screen, read again now.
+
+    What it answers that the per-swipe record cannot is what became of that canvas once the
+    render it was waiting for landed: a slide that was swapped out is off the screen with
+    its own page still on it, and one that was drawn into again is on the screen with a
+    different page on it.
+    """
+    return page.evaluate(
+        """() => {
+          const c = window.__vwHeld;
+          if (!c) return null;
+          return {connected: c.isConnected, w: c.width, h: c.height};
+        }"""
+    )

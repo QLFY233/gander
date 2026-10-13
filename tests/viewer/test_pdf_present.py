@@ -16,9 +16,9 @@ import threading
 import pytest
 
 from helpers import (
-    after_frames, play_boxes, play_centre, play_colours, play_state, play_visible,
-    set_page_scale, slot_states, touch_gesture, wait_for_play_away, wait_for_pdf,
-    wait_for_slide,
+    after_frames, held_slide, play_boxes, play_centre, play_colours, play_slides,
+    play_state, play_visible, set_page_scale, slot_states, swipe_within, touch_gesture,
+    wait_for_play_away, wait_for_pdf, wait_for_slide,
 )
 
 SLIDES = "slides-16x9.pdf"
@@ -219,6 +219,39 @@ def test_it_follows_the_reader_into_a_pinch(viewer, page, port):
     assert after["canvas"]["w"] == pytest.approx(before["canvas"]["w"], rel=0.02)
 
 
+def test_a_turn_of_the_phone_fits_the_slide_again(viewer, page, port):
+    """
+    The phone turned is the box changing shape, and every slide that is ready was fitted to
+    the box as it was.
+
+    Waited on by the canvas on screen being a different one, because the page number and
+    the fit the slide was drawn for are both unchanged by a turn of the phone: what is
+    being waited for is a slide drawn for the new box, and the old one is up until there is
+    one - stretched into the new box rather than taken away, which is a soft slide for the
+    length of a render instead of a blank one.
+    """
+    open_slides(viewer, page)
+    present(port(), page)
+    assert play_boxes(page)["layer"]["h"] == pytest.approx(1600, abs=2)
+    page.evaluate(
+        "() => { document.getElementById('vw-play-canvas').dataset.vw = 'before'; }")
+
+    page.set_viewport_size({"width": 1400, "height": 800})
+    page.wait_for_function(
+        "() => { const c = document.getElementById('vw-play-canvas');"
+        "return !!c && c.dataset.vw !== 'before'; }", timeout=10000)
+    after = play_boxes(page)
+
+    assert after["layer"]["w"] == pytest.approx(1400, abs=2)
+    assert after["layer"]["h"] == pytest.approx(800, abs=2)
+    # Whole, centred, and drawn at the new box's resolution: fitted again rather than left
+    # at the size the box it was drawn for gave it.
+    assert min(after["layer"]["w"] - after["slide"]["w"],
+               after["layer"]["h"] - after["slide"]["h"]) == pytest.approx(0, abs=1)
+    assert after["slide"]["w"] / after["slide"]["h"] == pytest.approx(ratio(page), rel=0.01)
+    assert after["canvas"]["w"] >= after["slide"]["w"] - 1
+
+
 # ---------------------------------------------------------------------------
 # Turning the page
 # ---------------------------------------------------------------------------
@@ -304,6 +337,134 @@ def test_a_second_finger_cancels_the_swipe(viewer, page, port):
     ])
     after_frames(page)
     assert play_state(page)["at"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Drawing ahead, so that a turn is a swap rather than a wait
+# ---------------------------------------------------------------------------
+
+def wait_for_neighbour(page, n, timeout=20000):
+    """Waits until page [n] is drawn and waiting, off the screen or on it."""
+    page.wait_for_function(
+        "(n) => document.getElementById('vw-play')._play.slides.some(s => s.n === n)",
+        arg=n, timeout=timeout,
+    )
+    return page
+
+
+def test_the_neighbour_is_drawn_before_it_is_asked_for(viewer, page, port):
+    """
+    The page after this one is drawn while the reader is still looking at this one.
+
+    This is the whole of what makes a turn instant. A render takes about a fifth of a
+    second on a phone, so a presentation that draws the page it has been asked for draws
+    it while the reader waits; one that draws the page after it has nothing to wait for.
+    """
+    open_slides(viewer, page)
+    present(port(), page)
+    wait_for_neighbour(page, 2)
+    assert 2 in play_slides(page)
+
+
+def test_a_turn_towards_a_ready_slide_is_a_swap(viewer, page, port):
+    """
+    A turn to a page whose slide is drawn lands in the same turn as the swipe.
+
+    Read inside the page rather than after a round trip, because that is the claim: there
+    is no wait to measure from outside. The canvas that was on screen is off it afterwards
+    and still has its own page on it, which is the difference between a slide being swapped
+    out and a slide being drawn over - and drawing over it is what a reader sees as the
+    page going white and then assembling itself.
+    """
+    open_slides(viewer, page)
+    present(port(), page)
+    wait_for_neighbour(page, 2)
+    state = swipe_within(page, -240)[0]
+    assert state["at"] == 2
+    assert state["drawn"] == 2, "the slide was not on screen by the time the swipe returned"
+    assert state["view"] == 2
+    held = state["held"]
+    assert not held["connected"], "the slide that was on screen is still on screen"
+    assert held["w"] > 300 and held["h"] > 300
+    assert held["corner"] != [0, 0, 0], "the slide that was swapped out was emptied"
+
+
+def test_a_page_that_is_not_ready_leaves_the_slide_that_is_up(viewer, page, port):
+    """
+    A turn to a page with no slide drawn yet changes nothing until there is one.
+
+    pdf.js fills a page white and then runs the display list over it, so a turn drawn into
+    the canvas that is on screen goes: the slide disappears, a white rectangle arrives, and
+    the page assembles itself across it. Here the swipe is read in the same turn it is made
+    in and the slide the reader was looking at is still up, whole, until its replacement is
+    finished. A swipe that does nothing for a fifth of a second and then turns the page is
+    worth more than one that turns it into a white rectangle.
+
+    The swipe being asked about is the last of three, because a page one away may already
+    have been drawn and the page after that never has: nothing is drawn further ahead than
+    the page after the one on screen. All three are made in the same turn, because a render
+    that lands between two round trips out to Python answers for the wrong swipe.
+    """
+    viewer("pdf.html", "six-pages.pdf")
+    wait_for_pdf(page, pages=6)
+    present(port(), page)
+    wait_for_neighbour(page, 2)
+    last = swipe_within(page, -240, swipes=3)[-1]
+    assert last["at"] == 4
+    assert last["rendering"] == 4
+    assert last["drawn"] == last["view"], "the page recorded is not the one on screen"
+    assert last["drawn"] < last["at"], "a slide landed, so nothing was waited for"
+    assert last["held"]["connected"], "the slide was taken off the screen to wait"
+    assert last["held"]["w"] > 300
+    assert last["held"]["corner"] != [0, 0, 0], "the slide on screen was emptied"
+    wait_for_slide(page, 4)
+    assert held_slide(page)["connected"] is False
+
+
+def test_turning_back_comes_back_to_the_slide_that_was_left(viewer, page, port):
+    """
+    The page just left is kept, so a turn back to it is the same swap as a turn forward.
+
+    Named before the turn away and looked for again after the turn back: presenting a
+    document is a thing done in both directions, and re-drawing the page the reader has
+    just been shown would be a fifth of a second spent showing them something already
+    drawn.
+    """
+    open_slides(viewer, page)
+    present(port(), page)
+    page.evaluate(
+        "() => { document.getElementById('vw-play-canvas').dataset.vw = 'first'; }")
+    wait_for_neighbour(page, 2)
+    assert swipe_within(page, -240)[0]["drawn"] == 2
+    assert 1 in play_slides(page)
+    state = swipe_within(page, 240)[0]
+    assert state["at"] == 1
+    assert state["drawn"] == 1
+    assert page.evaluate(
+        "() => document.getElementById('vw-play-canvas').dataset.vw") == "first"
+
+
+def test_the_presentation_holds_three_slides_and_no_more(viewer, page, port):
+    """
+    A slide is a canvas and a canvas is a screenful of pixels, so the presentation keeps
+    three: the page on screen and the two either side of it.
+
+    A document flicked through is then a canvas allocated and a canvas freed on every turn
+    rather than a document's worth of them waiting for a collection. Only one of the three
+    is in the layer as well; the rest are canvases being held, not elements being stacked
+    up behind the slide on screen.
+    """
+    viewer("pdf.html", "six-pages.pdf")
+    wait_for_pdf(page, pages=6)
+    present(port(), page)
+    for n in (2, 3, 4, 5):
+        swipe(page, -300)
+        wait_for_slide(page, n)
+        held = play_slides(page)
+        assert len(held) <= 3, f"{len(held)} slides at page {n}"
+        assert set(held) <= {n - 1, n, n + 1}
+        assert page.evaluate(
+            "() => document.querySelectorAll('#vw-play canvas').length") == 1
 
 
 # ---------------------------------------------------------------------------
