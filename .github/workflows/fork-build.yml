@@ -66,7 +66,8 @@ jobs:
       # wrapper jar 是跑在本仓库代码之前的二进制，必须校验（AGENTS.md 铁律 1）。
       - uses: gradle/actions/wrapper-validation@v4
 
-      - uses: actions/setup-java@v4
+      # v5：v4 已被 GitHub 标记弃用（平台告警），行为与 v4 相同，只换主版本。
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
