@@ -16,7 +16,7 @@
 ## 二、铁律（禁止 / 必须）
 
 1. **禁止推送到 upstream**。`upstream` 的 push URL 已被禁用（`DISABLED_upstream_is_read_only__see_AGENTS.md`），并装有 `.git/hooks/pre-push` 拦截。禁止绕过（改 pushurl、直接 `git push <url>`、删钩子后推送）。
-2. **禁止向上游仓库开 PR / issue / 评论**，除非用户当轮明确要求。
+2. **禁止任何以 `mokshablr/gander` 为目标（`--repo` / `-R`，或 `GH_REPO` 等隐式指定）的 `gh` 写操作**：`issue` / `pr` / `comment` / `release` / `workflow`，以及 `gh api` 的任何 POST / PATCH / PUT / DELETE 请求。除非用户当轮明确要求。只读查询（`gh api` 的 GET、`gh repo view`、`gh pr list` 等）不受此限。
 3. **禁止在 `main` 上提交**。一切改动提交在 `local/<主题>` 分支上。
 4. **禁止 `git rebase` 上游历史**，禁止对上游同步使用 `git pull --rebase`。同步上游**必须** `git fetch upstream` + `git merge upstream/main`。
 5. **禁止对已公开分支 force push**；对自己未公开的 `local/*` 分支确需强推时，只能 `git push --force-with-lease`。
