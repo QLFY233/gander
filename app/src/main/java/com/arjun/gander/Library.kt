@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Environment
 import android.os.Handler
@@ -197,6 +198,33 @@ internal class Library(private val app: Context) {
         db.rawQuery("SELECT * FROM ref WHERE id = ?", arrayOf(refId.toString())).use { c ->
             if (c.moveToFirst()) ref(c) else null
         }
+
+    /** The row filed under [uri], or null if the library has never heard of the file. */
+    fun refFor(uri: Uri): LibraryRef? =
+        db.rawQuery("SELECT * FROM ref WHERE uri = ?", arrayOf(uri.toString())).use { c ->
+            if (c.moveToFirst()) ref(c) else null
+        }
+
+    /**
+     * Files a cover the viewer drew of a document it had open.
+     *
+     * A Word document is the one format Gander renders but cannot cheaply draw a card for: it
+     * is a page in the viewer's WebView, and rendering one off-screen for a card that scrolled
+     * past would stall a tablet for seconds at a time. So the viewer photographs the page it
+     * has already drawn and hands it here, and this is where it becomes a cover — on the thread
+     * that owns the index, and only if the file is one of ours and has no cover yet.
+     */
+    fun fileCover(uri: Uri, drawn: Bitmap) {
+        io.execute {
+            val ref = refFor(uri) ?: return@execute
+            if (ref.coverState == Covers.READY) return@execute
+            markCover(ref.id, Covers.READY, Covers.store(app, ref, drawn))
+            // The card for this file is still holding the type icon that stood in for the cover
+            // it did not have. The screen showing it is not the one that asked for this — the
+            // viewer is — so it is told rather than left to notice.
+            changed(null)
+        }
+    }
 
     /** How many files a section holds, without reading them. */
     fun countFor(node: LibraryNode): Int = (

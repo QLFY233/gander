@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
 import android.net.Uri
@@ -654,6 +655,14 @@ open class ViewerActivity : AppCompatActivity() {
 
     /** The page end of the PDF search channel, held so it can be closed. */
     private var searchPort: WebMessagePortCompat? = null
+
+    /**
+     * Whether this screen has already photographed the page it has open.
+     *
+     * One cover per visit, and one per document: the first report of the first page is the one
+     * worth keeping, and the page reports again every time the reader scrolls back to it.
+     */
+    private var coverCaptured = false
 
     /**
      * The night mode the page was loaded with, so a tap made before the channel exists
@@ -1414,7 +1423,7 @@ open class ViewerActivity : AppCompatActivity() {
      * Posted on page finished rather than at load, because the listener that takes it
      * lives in the page and is not there until the page has run.
      */
-    private fun openSearchChannel(web: WebView, kind: FileKind) {
+    private fun openSearchChannel(web: WebView, kind: FileKind, uri: Uri) {
         if (!canPortSearch() || searchPort != null) return
         val ends = WebViewCompat.createWebMessageChannel(web)
         val mine = ends[0]
@@ -1432,6 +1441,9 @@ open class ViewerActivity : AppCompatActivity() {
                             pageTotal = said.of
                             setPageIndicatorText()
                             showPageIndicator()
+                            // The first page of a Word document is on screen, which is the
+                            // only moment one is ever rendered. See captureCover.
+                            if (kind == FileKind.DOCX && said.n == 1) captureCover(web, uri)
                         }
                         is PortMessage.SearchCount ->
                             onSearchCount?.invoke(said.at, said.total, said.done)
@@ -1468,6 +1480,46 @@ open class ViewerActivity : AppCompatActivity() {
         runCatching { searchPort?.close() }
         searchPort = null
         onSearchCount = null
+    }
+
+    /**
+     * Takes a picture of the page that has just been drawn, for the card on the home screen.
+     *
+     * A Word document is the one format Gander can render but not cheaply. There is no local
+     * Office renderer to call, so a cover has to come from a page in a WebView — and rendering
+     * one off-screen, for a card that scrolled past, would stall a tablet for seconds at a
+     * time. The viewer has already paid that cost by the time this runs, which is why the
+     * cover is a photograph of what it drew and why it exists only after the reader has
+     * opened the document once.
+     *
+     * Once per screen, and not once per report: the page says which page it is on whenever
+     * that changes, so scrolling back to the top would otherwise file the same cover again.
+     *
+     * Internal rather than private so a test can take the photograph without a page that runs:
+     * Robolectric's WebView is a shadow, so the report this answers to cannot be delivered.
+     */
+    internal fun captureCover(web: WebView, uri: Uri) {
+        if (coverCaptured) return
+        coverCaptured = true
+        val shot = runCatching { drawPageTop(web) }.getOrNull() ?: return
+        (application as GanderApp).library.fileCover(uri, shot)
+    }
+
+    /**
+     * The top of what the page is showing, cut to the shape of a card.
+     *
+     * A card's cover area is three quarters as tall as it is wide, and a WebView is taller than
+     * that on every phone, so this is the top of the viewport rather than all of it: a whole
+     * viewport scaled into the card would be cropped to its middle, which is the middle of the
+     * first page rather than the beginning of it.
+     */
+    private fun drawPageTop(web: WebView): Bitmap? {
+        val width = web.width
+        val height = web.height
+        if (width <= 0 || height <= 0) return null
+        val shot = Bitmap.createBitmap(width, minOf(height, width * 4 / 3), Bitmap.Config.ARGB_8888)
+        web.draw(Canvas(shot))
+        return shot
     }
 
     /**
@@ -1825,7 +1877,7 @@ open class ViewerActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 // The viewers that search from inside the page need a way to answer, and a
                 // paged document a way to report its pages and hear night mode
-                if (pageGetsChannel(kind)) openSearchChannel(view, kind)
+                if (pageGetsChannel(kind)) openSearchChannel(view, kind, uri)
             }
 
             /**

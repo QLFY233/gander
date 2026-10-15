@@ -143,9 +143,12 @@ internal class HomeAdapter(
 
         val kind = FileKind.detect(ref.ext, ref.mime)
         when {
-            // Nothing to draw, or something that has already failed to draw once. A cover is
-            // tried once per file and not once per scroll: an encrypted PDF fails every time.
-            !Covers.supported(kind, ref.ext) -> Unit
+            // Nothing this kind can ever have a cover from, or one that has already failed to
+            // draw once. A cover is tried once per file and not once per scroll: an encrypted
+            // PDF fails every time. A Word document is in neither group — it has a cover as
+            // soon as the reader has opened it, which is when the viewer photographs the page
+            // it has drawn, and load() says UNSUPPORTED until then.
+            !Covers.covered(kind, ref.ext) -> Unit
             ref.coverState == Covers.FAILED -> Unit
             else -> Covers.load(view.context, ref, cover, icon) { state ->
                 onCoverState(ref, state)

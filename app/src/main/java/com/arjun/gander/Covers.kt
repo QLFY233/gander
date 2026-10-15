@@ -50,7 +50,11 @@ internal object Covers {
     /** Tried and failed. Not tried again until the file's size or time changes. */
     const val FAILED = 2
 
-    /** Nothing here has a cheap preview: audio, zips, and every Office format. */
+    /**
+     * Nothing to show and nothing to draw: audio, zips, and the Office formats. A Word
+     * document reports this until the reader has opened it once, since the viewer is the only
+     * place one is ever rendered and its cover is a photograph of that.
+     */
     const val UNSUPPORTED = 3
 
     /** Long edge of a stored cover, in pixels. A 3:4 card shows it at about 190dp on a tablet. */
@@ -103,6 +107,14 @@ internal object Covers {
     }
 
     /**
+     * Whether a cover for this kind can exist at all: one drawn here from the file, or one the
+     * viewer filed after the reader opened it. A Word document is the second sort, and is the
+     * only one — the viewer is the only place one is ever rendered.
+     */
+    fun covered(kind: FileKind, ext: String): Boolean =
+        supported(kind, ext) || kind == FileKind.DOCX
+
+    /**
      * Draws the cover of [ref] into [into], hiding [badge] when it arrives.
      *
      * [onState] is told what happened, on the main thread, so the caller can keep that answer
@@ -118,11 +130,6 @@ internal object Covers {
         onState: (Int) -> Unit = {}
     ) {
         val kind = FileKind.detect(ref.ext, ref.mime)
-        if (!supported(kind, ref.ext)) {
-            onState(UNSUPPORTED)
-            return
-        }
-
         val key = key(ref)
         into.tag = key
         mem.get(key)?.let {
@@ -131,9 +138,17 @@ internal object Covers {
             return
         }
 
+        // Two ways a cover comes about: drawn here from the file, or filed by the viewer, which
+        // is the only place a Word document is ever rendered. See §5.4 of the design.
+        if (!covered(kind, ref.ext)) {
+            onState(UNSUPPORTED)
+            return
+        }
+        val drawable = supported(kind, ref.ext)
+
         val appCtx = context.applicationContext
         workers.execute {
-            val state = drawNow(appCtx, ref)
+            val state = if (drawable) drawNow(appCtx, ref) else filedCover(appCtx, ref)
             main.post {
                 if (state == Covers.READY) {
                     mem.get(key)?.let { if (into.tag == key) show(into, badge, it) }
@@ -141,6 +156,50 @@ internal object Covers {
                 onState(state)
             }
         }
+    }
+
+    /**
+     * [drawNow] for a kind that cannot be drawn here: the cover the viewer left behind, if it
+     * has been opened. Nothing has to be rendered, so this is a disk read and no more.
+     */
+    private fun filedCover(ctx: Context, ref: LibraryRef): Int {
+        val key = key(ref)
+        val bmp = fromDisk(ctx, key) ?: return UNSUPPORTED
+        mem.put(key, bmp)
+        return READY
+    }
+
+    /**
+     * Files a cover that was drawn somewhere else, and says what it is filed under.
+     *
+     * The viewer is the only caller. A Word document is rendered by a page in a WebView, and
+     * drawing one again off-screen for a card that scrolled past would stall a tablet for
+     * seconds at a time, so the viewer photographs the page it has already put on screen and
+     * hands it here. From this point it is a cover like any other: scaled to [LONG_EDGE],
+     * written under the same key as every other kind, and kept in memory for the card that is
+     * about to ask for it.
+     */
+    fun store(context: Context, ref: LibraryRef, drawn: Bitmap): String {
+        val key = key(ref)
+        val stored = scaleToLongEdge(drawn)
+        toDisk(context, key, stored)
+        prune(context)
+        mem.put(key, stored)
+        if (stored !== drawn) drawn.recycle()
+        return key
+    }
+
+    /** Down to [LONG_EDGE]; anything already that small is left alone. */
+    private fun scaleToLongEdge(bmp: Bitmap): Bitmap {
+        val longEdge = maxOf(bmp.width, bmp.height)
+        if (longEdge <= LONG_EDGE) return bmp
+        val scale = LONG_EDGE.toFloat() / longEdge
+        return Bitmap.createScaledBitmap(
+            bmp,
+            (bmp.width * scale).toInt().coerceAtLeast(1),
+            (bmp.height * scale).toInt().coerceAtLeast(1),
+            true
+        )
     }
 
     /**

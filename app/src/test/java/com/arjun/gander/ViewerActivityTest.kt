@@ -7,6 +7,7 @@ import android.content.pm.PackageInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
+import android.view.View
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
@@ -231,6 +232,84 @@ class ViewerActivityTest {
         // After the title bar's height, which the channel carries as it opens
         val bar = PortCommand.barHeight(word.get().documentChrome!!.heightDp())
         assertThat(channels[0][0].outgoingMessages).containsExactly(bar, "i1").inOrder()
+    }
+
+    // ---------------------------------------------------------------
+    // The cover a Word document leaves behind
+    // ---------------------------------------------------------------
+
+    /**
+     * The cover of a Word document is a photograph of the page the viewer has already drawn.
+     *
+     * There is no cheap local Office renderer, so the alternative is rendering the document
+     * again off-screen for a card that scrolled past: seconds of work on a tablet, for a
+     * picture a card wide. This is the only moment one is ever rendered, which is why the
+     * cover exists only after the reader has opened the document.
+     */
+    @Test
+    fun aWordDocumentHandsItsCoverToTheLibrary() {
+        val uri = FixtureProvider.uriFor("report.docx")
+        val library = (context as GanderApp).library
+        library.importPicked(listOf(uri))
+        val controller = open("report.docx")
+        val web = controller.webView()!!
+        // Laid out by hand: the photograph is of what the page has drawn, so it needs a size,
+        // and a WebView in a test is not measured by a window that never really exists.
+        web.measure(
+            View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY)
+        )
+        web.layout(0, 0, 600, 900)
+
+        controller.get().captureCover(web, uri)
+
+        val ref = library.refFor(uri)!!
+        assertThat(ref.coverState).isEqualTo(Covers.READY)
+        assertThat(ref.coverKey).isEqualTo(Covers.key(ref))
+        assertThat(File(context.filesDir, "covers/${ref.coverKey}.png").exists()).isTrue()
+    }
+
+    /**
+     * One photograph per visit, however often the page reports where it is: it says which page
+     * it is on whenever that changes, so scrolling back to the top would file a second one.
+     */
+    @Test
+    fun aWordDocumentIsPhotographedOnce() {
+        val uri = FixtureProvider.uriFor("report.docx")
+        val library = (context as GanderApp).library
+        library.importPicked(listOf(uri))
+        val controller = open("report.docx")
+        val web = controller.webView()!!
+        web.measure(
+            View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY)
+        )
+        web.layout(0, 0, 600, 900)
+        controller.get().captureCover(web, uri)
+        val cover = File(context.filesDir, "covers/${library.refFor(uri)!!.coverKey}.png")
+        assertThat(cover.delete()).isTrue()
+
+        controller.get().captureCover(web, uri)
+
+        assertThat(cover.exists()).isFalse()
+    }
+
+    /** A document that is not in the library has no card to put a cover on. */
+    @Test
+    fun aWordDocumentOutsideTheLibraryFilesNoCover() {
+        val uri = FixtureProvider.uriFor("report.docx")
+        val controller = open("report.docx")
+        val web = controller.webView()!!
+        web.measure(
+            View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY)
+        )
+        web.layout(0, 0, 600, 900)
+
+        controller.get().captureCover(web, uri)
+
+        assertThat((context as GanderApp).library.refFor(uri)).isNull()
+        assertThat(File(context.filesDir, "covers").listFiles().orEmpty()).isEmpty()
     }
 
     /** A photo gets the tiling view, not a WebView. */

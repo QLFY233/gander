@@ -1,6 +1,9 @@
 package com.arjun.gander
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import android.os.Looper
 import android.view.View
 import android.widget.ImageView
 import androidx.test.core.app.ApplicationProvider
@@ -10,6 +13,7 @@ import java.io.File
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 
 /**
  * The card covers.
@@ -89,6 +93,14 @@ class CoversTest {
         assertThat(Covers.supported(FileKind.XLSX, "xlsx")).isFalse()
         assertThat(Covers.supported(FileKind.PPTX, "pptx")).isFalse()
         assertThat(Covers.supported(FileKind.ARCHIVE, "zip")).isFalse()
+        // None of them can be drawn here, and only one of them can end up with a cover anyway:
+        // the viewer photographs a Word document's page when the reader opens it.
+        assertThat(Covers.covered(FileKind.DOCX, "docx")).isTrue()
+        assertThat(Covers.covered(FileKind.XLSX, "xlsx")).isFalse()
+        assertThat(Covers.covered(FileKind.PPTX, "pptx")).isFalse()
+        assertThat(Covers.covered(FileKind.ARCHIVE, "zip")).isFalse()
+        assertThat(Covers.covered(FileKind.PLAYER, "mp3")).isFalse()
+        assertThat(Covers.covered(FileKind.PDF, "pdf")).isTrue()
     }
 
     @Test
@@ -99,6 +111,85 @@ class CoversTest {
             ImageView(context), View(context)
         ) { states += it }
         assertThat(states).containsExactly(Covers.UNSUPPORTED)
+    }
+
+    // ---------------------------------------------------------------
+    // Word documents, whose cover is a photograph of the viewer's page
+    // ---------------------------------------------------------------
+
+    /**
+     * A docx has no cover until the reader has opened it, and a card that asks before that is
+     * told so rather than left waiting. Nothing is drawn and nothing is written, so the next
+     * scroll asks the same question and gets the same answer for the same price.
+     */
+    @Test
+    fun aWordDocumentHasNoCoverUntilTheViewerFilesOne() {
+        val states = mutableListOf<Int>()
+        val into = loadAndWait(ref(name = "report.docx"), states)
+
+        assertThat(states).containsExactly(Covers.UNSUPPORTED)
+        assertThat(into.drawable).isNull()
+        assertThat(File(context.filesDir, "covers").listFiles().orEmpty()).isEmpty()
+    }
+
+    /** And shows it afterwards, at the size every other cover is kept at. */
+    @Test
+    fun aWordDocumentShowsTheCoverTheViewerFiled() {
+        val ref = ref(name = "report.docx")
+        Covers.store(context, ref, Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888))
+
+        val states = mutableListOf<Int>()
+        val into = loadAndWait(ref, states)
+
+        assertThat(states).containsExactly(Covers.READY)
+        // The long edge of every cover, with the shape it was drawn in kept.
+        val shown = (into.drawable as BitmapDrawable).bitmap
+        assertThat(maxOf(shown.width, shown.height)).isEqualTo(512)
+        assertThat(shown.width).isEqualTo(384)
+        assertThat(File(context.filesDir, "covers/${Covers.key(ref)}.png").exists()).isTrue()
+    }
+
+    /** A page photographed smaller than the ceiling is kept as it is rather than stretched. */
+    @Test
+    fun aSmallWordCoverIsNotScaled() {
+        val ref = ref(name = "report.docx")
+        Covers.store(context, ref, Bitmap.createBitmap(120, 160, Bitmap.Config.ARGB_8888))
+
+        val into = loadAndWait(ref, mutableListOf())
+
+        assertThat((into.drawable as BitmapDrawable).bitmap.width).isEqualTo(120)
+    }
+
+    /** The file behind the URI was replaced, so what was photographed is not what is there. */
+    @Test
+    fun aReplacedWordDocumentHasNoCover() {
+        val was = ref(name = "report.docx", size = 10, mtime = 100)
+        Covers.store(context, was, Bitmap.createBitmap(120, 160, Bitmap.Config.ARGB_8888))
+        val now = ref(name = "report.docx", size = 20, mtime = 100)
+
+        val states = mutableListOf<Int>()
+        loadAndWait(now, states)
+
+        assertThat(states).containsExactly(Covers.UNSUPPORTED)
+    }
+
+    /**
+     * Binds a card the way the grid does, and waits for the answer.
+     *
+     * Real time, not SystemClock: Robolectric's clock stands still unless a test moves it, so a
+     * deadline on that one never arrives and a cover that never comes hangs the run rather than
+     * failing it. Covers are drawn and read on a worker thread, which is what the wait is for.
+     */
+    private fun loadAndWait(ref: LibraryRef, states: MutableList<Int>): ImageView {
+        val into = ImageView(context)
+        Covers.load(context, ref, into, View(context)) { states += it }
+        val deadline = System.nanoTime() + 10_000_000_000
+        while (states.isEmpty()) {
+            check(System.nanoTime() < deadline) { "no cover state for ${ref.name}" }
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        return into
     }
 
     // ---------------------------------------------------------------
