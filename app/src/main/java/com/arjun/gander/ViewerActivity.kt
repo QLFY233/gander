@@ -105,13 +105,13 @@ open class ViewerActivity : AppCompatActivity() {
          * being the whole of what Gander may read. Gander's own URIs and paths are refused
          * there, because each reads with Gander's access rather than the sender's:
          * - a file:// path or the path extra, anything Gander's own storage holds, such as
-         *   the Recents file, or /dev/zero, which never ends;
+         *   the library's reading history, or /dev/zero, which never ends;
          * - its FileProvider, which covers the cache and the thumbnails of the reader's
          *   documents in it;
          * - ArchiveProvider, which reads whatever archive its URI names: a folder the reader
-         *   granted, or a file in Recents.
-         * And only a file opened from Gander's own screens goes into Recents, so another app
-         * cannot plant an entry there under a name of its choosing.
+         *   granted, or a file in the reading history.
+         * And only a file opened from Gander's own screens goes into that history, so another
+         * app cannot plant an entry there under a name of its choosing.
          *
          * Nothing would leave the phone either way, since nothing can, but another app has
          * no business deciding what Gander shows.

@@ -249,6 +249,33 @@ internal fun orderChildren(
     return dirs.sortedWith(dirComparator) to files.sortedWith(fileComparator)
 }
 
+/**
+ * The reader's sort order, applied to the files of one folder.
+ *
+ * [Library.refsFor] brings a folder's rows back in one order — the order the database indexes
+ * them in, which is stable but nobody's choice — and this is the order the reader asked for.
+ * It is a property of the screen rather than of a folder: the same choice applies to every
+ * section at once, and to the files under a folder in the sidebar.
+ *
+ * Ties fall back to the name, as [orderChildren] does, so that two files written in the same
+ * millisecond do not swap places between one draw and the next.
+ */
+internal fun orderRefs(refs: List<LibraryRef>, order: Settings.SortOrder): List<LibraryRef> {
+    val nameCmp = compareBy(String.CASE_INSENSITIVE_ORDER) { r: LibraryRef -> r.name }
+    val dateCmp = compareBy<LibraryRef> { it.mtime }
+        .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+    val sizeCmp = compareBy<LibraryRef> { it.size }
+        .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+    return when (order) {
+        Settings.SortOrder.NAME_AZ -> refs.sortedWith(nameCmp)
+        Settings.SortOrder.NAME_ZA -> refs.sortedWith(nameCmp.reversed())
+        Settings.SortOrder.NEWEST -> refs.sortedWith(dateCmp.reversed())
+        Settings.SortOrder.OLDEST -> refs.sortedWith(dateCmp)
+        Settings.SortOrder.LARGEST -> refs.sortedWith(sizeCmp.reversed())
+        Settings.SortOrder.SMALLEST -> refs.sortedWith(sizeCmp)
+    }
+}
+
 internal data class SupportedFilterType(
     val badge: String,
     val color: Int,

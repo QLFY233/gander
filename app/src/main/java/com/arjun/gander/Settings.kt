@@ -4,8 +4,8 @@ import android.content.Context
 import androidx.core.content.edit
 
 /**
- * The reader's own preferences, as opposed to [Recents], which is a record of what
- * they opened.
+ * The reader's own preferences, as opposed to the library's reading history, which is a
+ * record of what they opened.
  *
  * Gander has never had a settings screen and does not want one; settings here persist
  * across opens because reading preferences and view modes are not things you want to

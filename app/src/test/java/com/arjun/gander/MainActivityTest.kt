@@ -41,10 +41,21 @@ class MainActivityTest {
     private lateinit var context: Context
     private lateinit var provider: FixtureProvider
 
+    /**
+     * The one fake folder provider for this test.
+     *
+     * Installed once and then filled in, rather than installed per folder: `install()` builds a
+     * new provider and registers it over the old one, so a second call in a test takes every
+     * folder the first had with it. Two folders in one test then leave the first one unreadable,
+     * which looks exactly like the screen failing to draw it.
+     */
+    private lateinit var documents: FakeDocumentsProvider
+
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         provider = FixtureProvider.install()
+        documents = FakeDocumentsProvider.install()
         Thumbs.resetForTests()
         Covers.resetForTests()
         // The library is the app's, and the app is a new one for every test, so the index starts
@@ -134,7 +145,7 @@ class MainActivityTest {
     /** A granted folder holding one subfolder and four files, one of them hidden. */
     private fun grantedFolder(name: String = "Documents"): Uri {
         val id = "root-${name.lowercase()}"
-        FakeDocumentsProvider.install().folder(
+        documents.folder(
             id,
             name,
             ChildDoc("sub", "Leases", MIME_DIR, 0, 0),
@@ -539,8 +550,12 @@ class MainActivityTest {
         val id = imported()
         val controller = home()
 
-        FakeDocumentsProvider.install().folder(
-            "root", "Documents", ChildDoc("n", "new.txt", "text/plain", 10, 10)
+        // The folder changed under us: one file gone, one new one in its place. This is what a
+        // pull is for — the index is a snapshot, and only a rescan moves it.
+        documents.folder(
+            "root-documents",
+            "Documents",
+            ChildDoc("n", "new.txt", "text/plain", 10, 10)
         )
         controller.get().pullToRefresh()
         shadowOf(context.mainLooper).idle()

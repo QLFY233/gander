@@ -446,6 +446,7 @@ class MainActivity : AppCompatActivity() {
         val filters = activeFilters.toSet()
         val searching = query.trim()
         val expanded = expandedFolders.toSet()
+        val order = Settings.sortOrder(this)
         val recentCollapsed = Settings.sectionCollapsed(this, SIDEBAR_RECENT, false)
         val foldersCollapsed = Settings.sectionCollapsed(this, SIDEBAR_FOLDERS, false)
         val filtering = filters.isNotEmpty() || searching.isNotEmpty()
@@ -474,7 +475,14 @@ class MainActivity : AppCompatActivity() {
                     if (library.ensureScanned(node.id)) truncated = node.id
                     node = library.node(node.id) ?: node
                 }
-                val held = if (collapsed) emptyList() else library.refsFor(node)
+                // A row whose Undo bar is up is off both columns until the bar has gone: the
+                // file is on its way out, and a card that stayed behind the question would
+                // make the removal look like it had failed.
+                val held = if (collapsed) {
+                    emptyList()
+                } else {
+                    orderRefs(library.refsFor(node).filter { it.uri != hidden }, order)
+                }
                 val shown = held.filter { matches(it, filters, searching) }
                 // A search or a filter hides a section that holds nothing that matches, rather
                 // than leaving a heading over an empty grid.
@@ -516,7 +524,9 @@ class MainActivity : AppCompatActivity() {
                     nodes.forEach { node ->
                         side += SidebarRow.Folder(node, node.id in expanded)
                         if (node.id in expanded) {
-                            val refs = library.refsFor(node).filter { it.uri != hidden }
+                            val refs = orderRefs(
+                                library.refsFor(node).filter { it.uri != hidden }, order
+                            )
                             if (refs.isEmpty()) {
                                 side += SidebarRow.Hint(getString(R.string.empty_folder))
                             } else {
