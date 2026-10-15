@@ -651,10 +651,10 @@ class MainActivity : AppCompatActivity() {
             androidx.appcompat.content.res.AppCompatResources.getDrawable(this, R.drawable.ic_panel)
         }
         toolbar.navigationContentDescription = getString(R.string.open_sidebar)
-        // The back gesture closes a floating panel and does nothing to one that shares the
-        // width: there, the panel is a column of the screen rather than something on top of it,
-        // and the reader can see it going away with the same tap that would have dismissed it.
-        backCallback.isEnabled = open && sidebarOverlays
+        // Back puts the panel away in either arrangement, and only then is there something to
+        // go back to. It is one rule rather than two because it is one gesture: the reader
+        // opened this panel, and the way out of what you opened is the way back.
+        backCallback.isEnabled = open
         if (persist) Settings.setSidebarOpen(this, open)
     }
 

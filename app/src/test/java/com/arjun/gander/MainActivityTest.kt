@@ -356,11 +356,15 @@ class MainActivityTest {
 
     @Test
     @Config(qualifiers = "sw600dp-land")
-    fun theBackGestureLeavesAFixedSidebarAlone() {
+    fun theBackGestureClosesASideBySideSidebar() {
         val controller = home()
-        controller.get().onBackPressedDispatcher.onBackPressed()
-        shadowOf(context.mainLooper).idle()
         assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
+
+        controller.get().onBackPressedDispatcher.onBackPressed()
+        shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
+
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+        assertThat(controller.get().isFinishing).isFalse()
     }
 
     /**
@@ -403,7 +407,9 @@ class MainActivityTest {
         shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
 
         assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
-        assertThat(controller.sidebar().width).isEqualTo(0)
+        // The width asked for, not the width last drawn: a view that goes GONE is skipped by
+        // the next layout pass and keeps the frame it had, so the measured width lags a frame.
+        assertThat(controller.sidebar().layoutParams.width).isEqualTo(0)
         assertThat(content.width).isEqualTo(root.width - root.paddingStart - root.paddingEnd)
     }
 
@@ -419,17 +425,19 @@ class MainActivityTest {
         assertThat(content.width).isEqualTo(root.width - root.paddingStart - root.paddingEnd)
     }
 
+    /** Back dismisses the panel in this arrangement too, rather than leaving the screen. */
     @Test
     @Config(qualifiers = "land")
-    fun theBackGestureLeavesALandscapeSidebarAlone() {
+    fun theBackGestureClosesALandscapeSidebar() {
         val controller = home()
         controller.get().toggleSidebar()
         shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
+        assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
 
         controller.get().onBackPressedDispatcher.onBackPressed()
-        shadowOf(context.mainLooper).idle()
+        shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
 
-        assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
         assertThat(controller.get().isFinishing).isFalse()
     }
 
