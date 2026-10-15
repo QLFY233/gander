@@ -3,8 +3,15 @@
      both fold, which is what the arrow says.
 
      The tap ripple is a foreground, not a background: a row that painted its own background
-     would be painting over the window's, which is what lint's Overdraw is about. -->
+     would be painting over the window's, which is what lint's Overdraw is about.
+
+     Lint would rather this row were one TextView with a compound drawable, and for a fixed
+     arrow it would be right. This arrow turns a quarter at a time as the section folds, and a
+     compound drawable has no rotation of its own — a RotateDrawable driven by a level would be
+     one, at the price of a wrapper drawable and of turning an arrow a second way, since the
+     folder rows below turn an ImageView. Hence the suppression. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/sidebarHeaderRow"
     android:layout_width="match_parent"
     android:layout_height="48dp"
@@ -15,7 +22,8 @@
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingStart="16dp"
-    android:paddingEnd="16dp">
+    android:paddingEnd="16dp"
+    tools:ignore="UseCompoundDrawables">
 
     <ImageView
         android:id="@+id/sidebarHeaderChevron"
