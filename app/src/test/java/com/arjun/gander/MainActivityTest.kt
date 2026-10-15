@@ -158,6 +158,14 @@ class MainActivityTest {
 
     private fun latestDialog(): AlertDialog? = ShadowDialog.getLatestDialog() as? AlertDialog
 
+    /**
+     * A dialog's title, which AlertDialog has no getter for.
+     *
+     * The id is AppCompat's own, which is what the dialog's own layout gives its title view.
+     */
+    private fun AlertDialog.title(): String =
+        findViewById<TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString()
+
     private fun AlertDialog.titles(): List<String> =
         (0 until listView.adapter.count).map { listView.adapter.getItem(it).toString() }
 

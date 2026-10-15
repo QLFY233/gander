@@ -350,11 +350,22 @@ class LibraryNodesTest {
         assertThat(library.search("  ")).isEmpty()
     }
 
-    /** A name with a wildcard in it is a name, not a pattern. */
+    /**
+     * A name with a wildcard in it is a name, not a pattern.
+     *
+     * The percent sign has to survive two things on the way in. The URI, where it is an escape
+     * character rather than a name — which is why [FixtureProvider.add] encodes it — and the
+     * LIKE pattern, where it is a wildcard rather than a name, which is what this asserts.
+     */
     @Test
     fun searchTreatsWildcardsAsText() {
         library.importPicked(listOf(picked("100% done.pdf"), picked("notes.txt")))
         assertThat(library.search("100%").map { it.name }).containsExactly("100% done.pdf")
+        // And the underscore, the other one. "_" would match any character, so a search for it
+        // would otherwise return every file whose name has one character where the underscore
+        // is — axb.pdf as much as a_b.pdf.
+        library.importPicked(listOf(picked("a_b.pdf"), picked("axb.pdf")))
+        assertThat(library.search("a_b").map { it.name }).containsExactly("a_b.pdf")
     }
 
     /** Only the index is searched: a folder nobody has opened holds nothing to find. */

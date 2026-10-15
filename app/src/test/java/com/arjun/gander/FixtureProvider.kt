@@ -56,6 +56,22 @@ internal class FixtureProvider : ContentProvider() {
 
         fun uriFor(name: String): Uri = Uri.parse("content://$AUTHORITY/$name")
 
+        /**
+         * The URI a real provider hands over for [name]: its path segment percent-encoded.
+         *
+         * Not [uriFor], which pastes the name in raw. A `%` in a URI path is not a percent
+         * sign, it is the start of an escape, and `Uri.decode` on a bad one writes U+FFFD
+         * over it and eats the character after: `100% done.pdf` comes back as
+         * `100\ufffddone.pdf`. Real documents arrive encoded, so anything that has to survive
+         * the round trip — a filename with a percent sign in it, above all — has to be built
+         * the way a provider builds it.
+         *
+         * `.` is allowed through, because it is in every filename here and `Uri.encode`
+         * alone would turn each one into `%2E`.
+         */
+        fun uriForEncoded(name: String): Uri =
+            Uri.parse("content://$AUTHORITY/${Uri.encode(name, ".")}")
+
         /** A provider-supplied display name that is not the fixture's own. */
         fun uriNamed(name: String, displayName: String): Uri =
             Uri.parse("content://$AUTHORITY/$name?name=$displayName")
@@ -67,7 +83,7 @@ internal class FixtureProvider : ContentProvider() {
     /** Serves [file] under [name], for documents generated inside a test. */
     fun add(name: String, file: File): Uri {
         extra[name] = file
-        return uriFor(name)
+        return uriForEncoded(name)
     }
 
     override fun onCreate() = true
