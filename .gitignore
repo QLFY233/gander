@@ -38,3 +38,11 @@ scripts/screenshots/out/
 # compress between versions. Rebuild it with scripts/make-press-kit.sh before
 # uploading docs/press/ to cPanel.
 docs/press/assets/gander-press-kit.zip
+
+# Written after this repo was forked, and neither part of what ships nor anything
+# upstream has: the fork's own rules (AGENTS.md) and internal design notes for
+# changes not yet made. Both stay in the working tree. This entry keeps them out of
+# future commits; it does not take AGENTS.md out of the commits already pushed on
+# 2026-10-13, which only a rewrite of that history could do.
+AGENTS.md
+docs/HOME-REDESIGN.md
