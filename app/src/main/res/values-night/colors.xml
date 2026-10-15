@@ -58,4 +58,23 @@
     <color name="gander_inverse_surface">#E7E2D9</color>
     <color name="gander_inverse_on_surface">#1E1B15</color>
     <color name="gander_inverse_primary">#AF2D18</color>
+
+    <!-- The layer behind each folder colour, in the night theme mixed 42% toward white
+         instead of darkened.
+
+         This is the only part of the folder palette that has to be overridden. A dark shade
+         on the night ground disappears into it, so the tab behind a folder would stop being
+         a shape at all; lightening it puts the two layers back in the same relationship as
+         they have by day, only inverted. The ten fronts are not overridden: each already
+         clears 3:1 against this ground as well as the light one. -->
+    <color name="folder_0_shade">#84AAD1</color>
+    <color name="folder_1_shade">#86B89F</color>
+    <color name="folder_2_shade">#DA9D7E</color>
+    <color name="folder_3_shade">#DD8787</color>
+    <color name="folder_4_shade">#97BDCD</color>
+    <color name="folder_5_shade">#B59FE7</color>
+    <color name="folder_6_shade">#88C3C2</color>
+    <color name="folder_7_shade">#E790BC</color>
+    <color name="folder_8_shade">#D5B17D</color>
+    <color name="folder_9_shade">#9CABB2</color>
 </resources>

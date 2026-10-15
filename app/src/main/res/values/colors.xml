@@ -72,7 +72,48 @@
          dark whatever the phone is set to, so this must not invert with the theme. -->
     <color name="audio_backdrop">#FF17130A</color>
 
+    <!-- What the sidebar dims the content with while it floats over it. Deliberately not a
+         theme role: it is the same dim whatever the theme, because what it says is "this is
+         behind something", and a light-mode scrim would be a highlight. -->
+    <color name="gander_scrim">#99000000</color>
+
     <!-- Unchanged: the icon and the app it opens are one family already, and
          retouching it means regenerating two baked PNGs that are not in this repo. -->
     <color name="ic_launcher_background">#F6F1E6</color>
+
+    <!-- The ten folder colours, in the order Listing.folderColorIndex counts them.
+
+         Only the fronts are here. Each is drawn over its own shade, which is the one part
+         of the palette that has to change with the theme, so the ten shades are overridden
+         in values-night/colors.xml and these ten are not: each front measures at least 3:1
+         against the light ground and at least 3:1 against the night one, which is WCAG's
+         threshold for a non-text graphic, so one copy serves both.
+
+         Three of the ten are the badge colours the app already uses for the same kinds, so
+         a folder named after its contents is not a coincidence of the palette. The tenth is
+         a slate, which the badge set had no reason to have. -->
+    <color name="folder_0">#2B6CB0</color>
+    <color name="folder_1">#2F855A</color>
+    <color name="folder_2">#C05621</color>
+    <color name="folder_3">#C53030</color>
+    <color name="folder_4">#4C8DA8</color>
+    <color name="folder_5">#805AD5</color>
+    <color name="folder_6">#319795</color>
+    <color name="folder_7">#D53F8C</color>
+    <color name="folder_8">#B7791F</color>
+    <color name="folder_9">#546E7A</color>
+
+    <!-- The layer behind each of those, at 78% of its lightness. In the light theme a
+         folder's tab is a shade of its front, which is what makes the two-layer drawable
+         read as one object. -->
+    <color name="folder_0_shade">#225489</color>
+    <color name="folder_1_shade">#256846</color>
+    <color name="folder_2_shade">#96431A</color>
+    <color name="folder_3_shade">#9A2525</color>
+    <color name="folder_4_shade">#3B6E83</color>
+    <color name="folder_5_shade">#6446A6</color>
+    <color name="folder_6_shade">#267674</color>
+    <color name="folder_7_shade">#A6316D</color>
+    <color name="folder_8_shade">#8F5E18</color>
+    <color name="folder_9_shade">#42565F</color>
 </resources>

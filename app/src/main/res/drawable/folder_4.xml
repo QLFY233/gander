@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Folder slot 4 of ten. A layer-list rather than a vector because the two halves
+     are tinted separately: the shade behind, the main colour in front. See
+     docs/file-icons/README.md and Listing.folderDrawable. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/ic_folder_back"
+        android:tint="@color/folder_4_shade" />
+    <item
+        android:drawable="@drawable/ic_folder_front"
+        android:tint="@color/folder_4" />
+</layer-list>
