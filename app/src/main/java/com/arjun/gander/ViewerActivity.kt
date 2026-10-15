@@ -665,6 +665,13 @@ open class ViewerActivity : AppCompatActivity() {
     private var coverCaptured = false
 
     /**
+     * How the page is photographed for the card on the home screen. Tests swap in one that
+     * returns a picture without asking a WebView to draw, which a shadow cannot do.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal var pageShot: (WebView) -> Bitmap? = { drawPageTop(it) }
+
+    /**
      * The night mode the page was loaded with, so a tap made before the channel exists
      * is not lost. setUpNightMode runs in onCreate and the port only arrives on page
      * finished; in between the item is tappable and there is nowhere to send it. The
@@ -1501,23 +1508,25 @@ open class ViewerActivity : AppCompatActivity() {
     internal fun captureCover(web: WebView, uri: Uri) {
         if (coverCaptured) return
         coverCaptured = true
-        val shot = runCatching { drawPageTop(web) }.getOrNull() ?: return
+        val shot = runCatching { pageShot(web) }.getOrNull() ?: return
         (application as GanderApp).library.fileCover(uri, shot)
     }
 
     /**
      * The top of what the page is showing, cut to the shape of a card.
      *
-     * A card's cover area is three quarters as tall as it is wide, and a WebView is taller than
-     * that on every phone, so this is the top of the viewport rather than all of it: a whole
-     * viewport scaled into the card would be cropped to its middle, which is the middle of the
-     * first page rather than the beginning of it.
+     * A WebView that has not been laid out yet has nothing to draw, and a page that is still
+     * loading is not worth photographing anyway: the caller passes over both.
      */
     private fun drawPageTop(web: WebView): Bitmap? {
         val width = web.width
         val height = web.height
         if (width <= 0 || height <= 0) return null
-        val shot = Bitmap.createBitmap(width, minOf(height, width * 4 / 3), Bitmap.Config.ARGB_8888)
+        val shot = Bitmap.createBitmap(
+            width,
+            coverHeightFor(width, height),
+            Bitmap.Config.ARGB_8888
+        )
         web.draw(Canvas(shot))
         return shot
     }
@@ -2308,3 +2317,14 @@ open class ViewerActivity : AppCompatActivity() {
         super.onDestroy()
     }
 }
+
+/**
+ * How tall the photograph of a page is, given the size of the WebView holding it.
+ *
+ * A card's cover area is three quarters as tall as it is wide, and a WebView is taller than
+ * that on every phone, so the photograph is the top of the viewport rather than all of it: a
+ * whole viewport scaled into the card would be cropped to its middle, which is the middle of
+ * the first page rather than the beginning of it. A viewport shorter than that shape — a phone
+ * on its side, a split screen — is taken as it is, since there is nothing below it to include.
+ */
+internal fun coverHeightFor(width: Int, height: Int): Int = minOf(height, width * 4 / 3)

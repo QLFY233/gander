@@ -7,7 +7,6 @@ import android.content.pm.PackageInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
-import android.view.View
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
@@ -252,16 +251,11 @@ class ViewerActivityTest {
         val library = (context as GanderApp).library
         library.importPicked(listOf(uri))
         val controller = open("report.docx")
-        val web = controller.webView()!!
-        // Laid out by hand: the photograph is of what the page has drawn, so it needs a size,
-        // and a WebView in a test is not measured by a window that never really exists.
-        web.measure(
-            View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY)
-        )
-        web.layout(0, 0, 600, 900)
+        // What the WebView would have drawn, without asking a shadow to draw it: the picture
+        // itself is not the part under test here, where it ends up is.
+        controller.get().pageShot = { Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888) }
 
-        controller.get().captureCover(web, uri)
+        controller.get().captureCover(controller.webView()!!, uri)
 
         val ref = library.refFor(uri)!!
         assertThat(ref.coverState).isEqualTo(Covers.READY)
@@ -279,17 +273,12 @@ class ViewerActivityTest {
         val library = (context as GanderApp).library
         library.importPicked(listOf(uri))
         val controller = open("report.docx")
-        val web = controller.webView()!!
-        web.measure(
-            View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY)
-        )
-        web.layout(0, 0, 600, 900)
-        controller.get().captureCover(web, uri)
+        controller.get().pageShot = { Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888) }
+        controller.get().captureCover(controller.webView()!!, uri)
         val cover = File(context.filesDir, "covers/${library.refFor(uri)!!.coverKey}.png")
         assertThat(cover.delete()).isTrue()
 
-        controller.get().captureCover(web, uri)
+        controller.get().captureCover(controller.webView()!!, uri)
 
         assertThat(cover.exists()).isFalse()
     }
@@ -299,17 +288,23 @@ class ViewerActivityTest {
     fun aWordDocumentOutsideTheLibraryFilesNoCover() {
         val uri = FixtureProvider.uriFor("report.docx")
         val controller = open("report.docx")
-        val web = controller.webView()!!
-        web.measure(
-            View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY)
-        )
-        web.layout(0, 0, 600, 900)
+        controller.get().pageShot = { Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888) }
 
-        controller.get().captureCover(web, uri)
+        controller.get().captureCover(controller.webView()!!, uri)
 
         assertThat((context as GanderApp).library.refFor(uri)).isNull()
         assertThat(File(context.filesDir, "covers").listFiles().orEmpty()).isEmpty()
+    }
+
+    /**
+     * The photograph is the top of the page, in the shape of a card — three quarters as tall as
+     * it is wide — and a viewport that is shorter than that is taken whole.
+     */
+    @Test
+    fun aPageIsPhotographedInTheShapeOfACard() {
+        assertThat(coverHeightFor(600, 900)).isEqualTo(800)
+        assertThat(coverHeightFor(600, 700)).isEqualTo(700)
+        assertThat(coverHeightFor(0, 0)).isEqualTo(0)
     }
 
     /** A photo gets the tiling view, not a WebView. */
