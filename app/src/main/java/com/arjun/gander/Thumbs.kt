@@ -15,6 +15,8 @@ import android.os.Looper
 import android.util.LruCache
 import android.view.View
 import android.widget.ImageView
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.security.MessageDigest
@@ -165,9 +167,7 @@ object Thumbs {
             val frame = retriever.frameAtTime ?: return null
             val scale = size.toFloat() / maxOf(frame.width, frame.height)
             if (scale >= 1f) frame
-            else Bitmap.createScaledBitmap(
-                frame, (frame.width * scale).toInt(), (frame.height * scale).toInt(), true
-            )
+            else frame.scale((frame.width * scale).toInt(), (frame.height * scale).toInt())
         } finally {
             runCatching { retriever.release() }
         }
@@ -181,7 +181,7 @@ object Thumbs {
                 renderer.openPage(0).use { page ->
                     val height = (size.toFloat() * page.height / page.width).toInt()
                         .coerceIn(1, size * 2)
-                    val bmp = Bitmap.createBitmap(size, height, Bitmap.Config.ARGB_8888)
+                    val bmp = createBitmap(size, height)
                     Canvas(bmp).drawColor(Color.WHITE)
                     page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     return bmp

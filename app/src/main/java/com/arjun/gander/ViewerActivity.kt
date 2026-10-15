@@ -49,6 +49,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.core.content.FileProvider
 import androidx.core.content.IntentCompat
 import androidx.core.view.ViewCompat
@@ -1522,11 +1523,7 @@ open class ViewerActivity : AppCompatActivity() {
         val width = web.width
         val height = web.height
         if (width <= 0 || height <= 0) return null
-        val shot = Bitmap.createBitmap(
-            width,
-            coverHeightFor(width, height),
-            Bitmap.Config.ARGB_8888
-        )
+        val shot = createBitmap(width, coverHeightFor(width, height))
         web.draw(Canvas(shot))
         return shot
     }

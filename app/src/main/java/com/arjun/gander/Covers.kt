@@ -9,6 +9,7 @@ import android.os.Looper
 import android.util.LruCache
 import android.view.View
 import android.widget.ImageView
+import androidx.core.graphics.scale
 import androidx.core.net.toUri
 import java.io.File
 import java.security.MessageDigest
@@ -194,11 +195,9 @@ internal object Covers {
         val longEdge = maxOf(bmp.width, bmp.height)
         if (longEdge <= LONG_EDGE) return bmp
         val scale = LONG_EDGE.toFloat() / longEdge
-        return Bitmap.createScaledBitmap(
-            bmp,
+        return bmp.scale(
             (bmp.width * scale).toInt().coerceAtLeast(1),
-            (bmp.height * scale).toInt().coerceAtLeast(1),
-            true
+            (bmp.height * scale).toInt().coerceAtLeast(1)
         )
     }
 
