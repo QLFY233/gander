@@ -6,4 +6,25 @@
     android:height="24dp"
     android:viewportWidth="64"
     android:viewportHeight="64">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M8,14 H56 V50 H8 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M18,26 a4,4 0 1 0 8,0 a4,4 0 1 0 -8,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M8,50 L26,30 L38,42 L46,34 L56,46" />
 </vector>
