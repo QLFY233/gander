@@ -26,7 +26,7 @@ class GanderApp : Application() {
      * opened until the first read, so a process that never shows the home screen never
      * touches the database.
      */
-    val library: Library by lazy { Library(this) }
+    internal val library: Library by lazy { Library(this) }
 
     override fun onCreate() {
         super.onCreate()
