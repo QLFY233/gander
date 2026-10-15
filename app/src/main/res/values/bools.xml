@@ -16,9 +16,13 @@
          The other half of the pair lives in values-sw600dp-land/bools.xml. Smallest width
          outranks orientation in the resource table, so both qualifiers are needed to say
          "a tablet held sideways": sw600dp alone is also a tablet held upright, which has no
-         room for two columns and floats the sidebar over the content like a phone. -->
-    <!-- The sidebar floats over the content, with a scrim, on everything except a landscape
-         tablet. See layout/activity_main.xml. -->
+         width to divide and floats the sidebar over the content like a phone. -->
+    <!-- Whether the sidebar floats over the content or shares the width with it.
+
+         It floats when there is no width to share: everything held upright, phone or tablet
+         alike. Held sideways there is, and values-land/bools.xml turns this off so the two
+         columns sit on one plane with the content narrowed beside the sidebar. See
+         layout/activity_main.xml and layout-land/activity_main.xml. -->
     <bool name="sidebar_overlays_content">true</bool>
 
     <!-- And starts away on those screens, because it covers the content when it is out. -->

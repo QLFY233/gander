@@ -1,5 +1,8 @@
 package com.arjun.gander
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -20,6 +24,7 @@ import androidx.appcompat.widget.SearchView
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -69,6 +74,7 @@ class MainActivity : AppCompatActivity() {
     private val library: Library get() = (application as GanderApp).library
 
     private lateinit var toolbar: MaterialToolbar
+    private lateinit var root: View
     private lateinit var sidebar: View
     private lateinit var scrim: View
     private lateinit var sidebarList: RecyclerView
@@ -88,6 +94,15 @@ class MainActivity : AppCompatActivity() {
 
     private var sidebarOpen = false
     private var sidebarOverlays = false
+
+    /**
+     * Whether the sidebar is mid-slide.
+     *
+     * Its width is what the slide moves, so the content column is re-measured on every frame
+     * of it; this is what keeps those frames from re-spanning the card grid on the way past.
+     */
+    private var sidebarAnimating = false
+    private var sidebarAnimator: ValueAnimator? = null
 
     /**
      * A row taken off the screen whose removal waits for its Undo bar to go.
@@ -198,7 +213,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root)) { v, insets ->
+        root = findViewById(R.id.root)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
@@ -234,6 +250,10 @@ class MainActivity : AppCompatActivity() {
         restoreFilters(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, backCallback)
         showSidebar(Settings.sidebarOpen(this), persist = false)
+        // The sidebar's width in the side-by-side arrangement is a share of the screen rather
+        // than a dimension, so it is settled here, once the width is known, and again on every
+        // pass after it: a rotation, a resized window, a desktop window being dragged wider.
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applySidebarWidth() }
         library.addListener(listener)
     }
 
@@ -323,6 +343,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyColumns(widthPx: Int) {
         if (widthPx <= 0) return
+        // Not while the sidebar is sliding: the width passes through every value between the
+        // two arrangements, and re-spanning the grid on each of them would make the slide a
+        // stutter of reflows. slideSidebar sets the count for where the slide is going.
+        if (sidebarAnimating) return
         val columns = cardColumns(
             widthPx,
             resources.getDimensionPixelSize(R.dimen.home_card_min_width),
@@ -616,17 +640,97 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSidebar(open: Boolean, persist: Boolean) {
         sidebarOpen = open
-        sidebar.visibility = if (open) View.VISIBLE else View.GONE
-        scrim.visibility = if (open && sidebarOverlays) View.VISIBLE else View.GONE
+        if (sidebarOverlays) {
+            // Floating: the panel is a layer over the content, and the scrim is what says so.
+            sidebar.visibility = if (open) View.VISIBLE else View.GONE
+            scrim.visibility = if (open) View.VISIBLE else View.GONE
+        } else {
+            slideSidebar(open)
+        }
         toolbar.navigationIcon = if (open) null else {
             androidx.appcompat.content.res.AppCompatResources.getDrawable(this, R.drawable.ic_panel)
         }
         toolbar.navigationContentDescription = getString(R.string.open_sidebar)
-        // The back gesture closes a floating panel and does nothing to a fixed one: a tablet
-        // held sideways has room for both columns and a panel that is always there is not
-        // something to dismiss.
+        // The back gesture closes a floating panel and does nothing to one that shares the
+        // width: there, the panel is a column of the screen rather than something on top of it,
+        // and the reader can see it going away with the same tap that would have dismissed it.
         backCallback.isEnabled = open && sidebarOverlays
         if (persist) Settings.setSidebarOpen(this, open)
+    }
+
+    /**
+     * Brings the sidebar in, or takes it away, by widening it a share of the screen.
+     *
+     * The width is what moves, rather than a translation: here the two columns are on one
+     * plane and the content's start is tied to the sidebar's end, so a panel that slid in over
+     * the content would leave the width it is about to take sitting empty until it arrived.
+     * Widening it moves the content with it, which is what "the screen shifts right" looks like
+     * when nothing is being covered.
+     */
+    private fun slideSidebar(open: Boolean) {
+        sidebarAnimator?.cancel()
+        // Before the first layout there is no width to take a share of and nothing to slide
+        // between, so the panel simply is or is not: the first pass settles the real width.
+        if (root.width <= 0) {
+            sidebar.visibility = if (open) View.VISIBLE else View.GONE
+            setSidebarWidth(
+                if (open) resources.getDimensionPixelSize(R.dimen.sidebar_width) else 0
+            )
+            return
+        }
+        val target = if (open) sidebarWidthFor(root.width) else 0
+        if (open) sidebar.visibility = View.VISIBLE
+        val from = sidebar.layoutParams.width.coerceAtLeast(0)
+        if (from == target) {
+            if (!open) sidebar.visibility = View.GONE
+            return
+        }
+
+        // Settle the column count for the width the panel is about to take or give back before
+        // the slide starts, so the cards narrow with the column rather than jumping between
+        // counts halfway through it. See applyColumns' guard for the frames in between.
+        applyColumns(contentWidthFor(open))
+        sidebarAnimating = true
+        sidebarAnimator = ValueAnimator.ofInt(from, target).apply {
+            duration = SIDEBAR_SLIDE_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { setSidebarWidth(it.animatedValue as Int) }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    sidebarAnimating = false
+                    if (!open) sidebar.visibility = View.GONE
+                    applyColumns(contentWidthFor(open))
+                }
+            })
+            start()
+        }
+    }
+
+    /** The sidebar's share of a landscape screen: a third of it. */
+    private fun sidebarWidthFor(rootWidth: Int) = (rootWidth * SIDEBAR_WIDTH_FRACTION).toInt()
+
+    /** The width the content column is left with, given where the sidebar is going. */
+    private fun contentWidthFor(panelOpen: Boolean): Int {
+        val sidebarWidth = if (panelOpen) sidebarWidthFor(root.width) else 0
+        return (root.width - root.paddingStart - root.paddingEnd - sidebarWidth -
+            contentList.paddingStart - contentList.paddingEnd).coerceAtLeast(0)
+    }
+
+    private fun setSidebarWidth(px: Int) {
+        if (sidebar.layoutParams.width == px) return
+        sidebar.updateLayoutParams { width = px }
+    }
+
+    /**
+     * Settles the sidebar's width once the screen's own is known, and again whenever it changes
+     * — a rotation, a resized window, a desktop window being dragged. In the floating
+     * arrangement the layout's dimension is the width and there is nothing to settle.
+     */
+    private fun applySidebarWidth() {
+        if (sidebarOverlays || sidebarAnimating) return
+        val target = sidebarWidthFor(root.width)
+        if (target <= 0) return
+        setSidebarWidth(if (sidebarOpen) target else 0)
     }
 
     private fun setSidebarSection(key: String, collapsed: Boolean) {
@@ -1147,5 +1251,16 @@ class MainActivity : AppCompatActivity() {
 
         /** Where the reader's filter was, kept across a configuration change. */
         const val STATE_ACTIVE_FILTERS = "active_filters"
+
+        /**
+         * How much of a landscape screen the sidebar takes.
+         *
+         * A share rather than a dimension, because what has to work is the content column
+         * beside it: a fixed 300dp is half a phone on its side and a fifth of a large tablet.
+         */
+        const val SIDEBAR_WIDTH_FRACTION = 0.3f
+
+        /** Long enough to read as the screen moving, short enough not to be waited for. */
+        const val SIDEBAR_SLIDE_MS = 180L
     }
 }

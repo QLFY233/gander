@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A tablet held sideways: the one configuration with room for the sidebar and the content
-     side by side. See layout-sw600dp-land/activity_main.xml, and values/bools.xml for why
-     both qualifiers are needed. -->
+<!-- A tablet held sideways: the one landscape with room to start with the sidebar already
+     out. Everything else about the arrangement is in values-land/bools.xml and
+     layout-land/activity_main.xml. -->
 <resources>
-    <bool name="sidebar_overlays_content">false</bool>
     <bool name="sidebar_open_by_default">true</bool>
 </resources>

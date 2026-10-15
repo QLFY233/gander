@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The home screen on a tablet held sideways: the sidebar and the content beside each
-     other, each scrolling on its own, with no scrim between them because nothing is
-     covered.
+<!-- The home screen held sideways: the sidebar and the content beside each other, each
+     scrolling on its own, with no scrim between them because nothing is covered.
 
-     smallestWidth outranks orientation in the resource table, so this file needs both
-     qualifiers: sw600dp alone would also be a tablet held upright, which has no room for
-     two columns and gets the overlay in layout/activity_main.xml instead. Both files
-     include the same two layouts, so the widgets and their ids are written once.
+     Any landscape, not only a tablet's: a phone on its side has the width to spare, and the
+     sidebar taking a share of it leaves a content column wide enough to read. Held upright
+     the same phone has none to spare, and layout/activity_main.xml floats the sidebar over
+     the content instead. Both files include the same two layouts, so the widgets and their
+     ids are written once.
+
+     The sidebar's width here is a dimension only until the first layout pass: it is a share
+     of the screen (MainActivity.sidebarWidthFor), which no resource qualifier can say, so
+     the activity settles it once the width is known.
 
      RelativeLayout and not a horizontal LinearLayout with a weight on the content: a weight
      here would sit inside the content column's own weight, and nested weights make every

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Held sideways: the sidebar and the content share the width, so there is nothing for a
+     scrim to dim. See layout-land/activity_main.xml.
+
+     Smallest width outranks orientation in the resource table, so this file catches every
+     landscape and values-sw600dp-land/bools.xml adds the one thing that differs on a tablet:
+     a screen this wide starts with the sidebar already out. -->
+<resources>
+    <bool name="sidebar_overlays_content">false</bool>
+</resources>

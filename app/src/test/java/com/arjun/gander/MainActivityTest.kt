@@ -363,6 +363,76 @@ class MainActivityTest {
         assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
     }
 
+    /**
+     * Held sideways, the two columns are on one plane: the sidebar takes a share of the width
+     * and the content starts where it ends, with nothing between them and nothing dimmed.
+     */
+    @Test
+    @Config(qualifiers = "land")
+    fun aLandscapePhoneSharesTheWidthRatherThanCoveringIt() {
+        imported()
+        val controller = home()
+        controller.get().toggleSidebar()
+        shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
+
+        val root = controller.get().findViewById<View>(R.id.root)
+        val content = controller.get().findViewById<View>(R.id.contentColumn)
+        val sidebar = controller.sidebar()
+        assertThat(sidebar.visibility).isEqualTo(View.VISIBLE)
+        assertThat(sidebar.width).isEqualTo((root.width * 0.3f).toInt())
+        assertThat(sidebar.width).isGreaterThan(0)
+        // The two columns divide the screen between them: one plane, nothing overlapping.
+        assertThat(content.width + sidebar.width)
+            .isEqualTo(root.width - root.paddingStart - root.paddingEnd)
+        // And nothing is covered, so there is nothing to dim and nothing to tap away.
+        assertThat(controller.scrim().visibility).isEqualTo(View.GONE)
+    }
+
+    /** The width is given back when the panel goes. */
+    @Test
+    @Config(qualifiers = "land")
+    fun aLandscapeSidebarSlidesAwayAndGivesTheWidthBack() {
+        val controller = home()
+        val root = controller.get().findViewById<View>(R.id.root)
+        val content = controller.get().findViewById<View>(R.id.contentColumn)
+        controller.get().toggleSidebar()
+        shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
+        assertThat(controller.sidebar().width).isGreaterThan(0)
+
+        controller.get().toggleSidebar()
+        shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
+
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+        assertThat(controller.sidebar().width).isEqualTo(0)
+        assertThat(content.width).isEqualTo(root.width - root.paddingStart - root.paddingEnd)
+    }
+
+    /** A phone on its side starts with the content full width: there is no room to spare. */
+    @Test
+    @Config(qualifiers = "land")
+    fun aLandscapePhoneStartsWithTheSidebarAway() {
+        val controller = home()
+        val root = controller.get().findViewById<View>(R.id.root)
+        val content = controller.get().findViewById<View>(R.id.contentColumn)
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+        assertThat(controller.scrim().visibility).isEqualTo(View.GONE)
+        assertThat(content.width).isEqualTo(root.width - root.paddingStart - root.paddingEnd)
+    }
+
+    @Test
+    @Config(qualifiers = "land")
+    fun theBackGestureLeavesALandscapeSidebarAlone() {
+        val controller = home()
+        controller.get().toggleSidebar()
+        shadowOf(context.mainLooper).idleFor(Duration.ofMillis(600))
+
+        controller.get().onBackPressedDispatcher.onBackPressed()
+        shadowOf(context.mainLooper).idle()
+
+        assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
+        assertThat(controller.get().isFinishing).isFalse()
+    }
+
     // ---------------------------------------------------------------
     // Sections
     // ---------------------------------------------------------------
