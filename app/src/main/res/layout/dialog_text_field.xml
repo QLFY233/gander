@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One field in a dialog, for the two places a reader types a name: a new folder and a
+     rename. Material's own inset above and below a field is 80dp, which puts the keyboard
+     over it on a short phone, so field_box_inset is used instead — the same value the
+     viewer's password and page-number boxes use. -->
+<com.google.android.material.textfield.TextInputLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/textFieldBox"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingStart="@dimen/field_box_inset"
+    android:paddingTop="@dimen/field_box_inset"
+    android:paddingEnd="@dimen/field_box_inset"
+    android:paddingBottom="@dimen/field_box_inset">
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/textField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="text"
+        android:maxLines="1" />
+</com.google.android.material.textfield.TextInputLayout>

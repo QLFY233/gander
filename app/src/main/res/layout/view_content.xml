@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The content column: every folder, one section each, as a grid of cards.
+
+     Included by both arrangements, so the two differ only in how much width they hand it.
+     The sidebar and this are two views of one index: a file added to a folder shows up here
+     and in the sidebar's tree without either being told about the other. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/contentColumn"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorSurface">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:title="@string/all_folders"
+            app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
+    </FrameLayout>
+
+    <!-- Between the title bar and the grid while a folder is being read or a refresh is
+         walking the trees. Indeterminate until the first count arrives, because before that
+         there is nothing to be a fraction of. -->
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/loadProgress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/refreshing"
+        android:indeterminate="true"
+        android:visibility="gone"
+        app:trackCornerRadius="0dp" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- A pull here is a full rescan of every imported folder, which is the only thing
+             that moves the index. There is no refresh button: one gesture, one meaning. -->
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/refresh"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/contentList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="24dp" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <!-- The first run, in place of the grid rather than at the top of it. Declared after
+             the grid so it draws over it; render() shows one and hides the other. -->
+        <include layout="@layout/view_welcome" />
+    </FrameLayout>
+</LinearLayout>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home screen on a tablet held sideways: the sidebar and the content beside each
+     other, each scrolling on its own, with no scrim between them because nothing is
+     covered.
+
+     smallestWidth outranks orientation in the resource table, so this file needs both
+     qualifiers: sw600dp alone would also be a tablet held upright, which has no room for
+     two columns and gets the overlay in layout/activity_main.xml instead. Both files
+     include the same two layouts, so the widgets and their ids are written once.
+
+     RelativeLayout and not a horizontal LinearLayout with a weight on the content: a weight
+     here would sit inside the content column's own weight, and nested weights make every
+     measurement two passes. It is also not a FrameLayout, because that is the root lint asks
+     a layout used as an activity's content view to replace with a <merge> tag. Rules rather
+     than stacking: nothing overlaps here, so the order of the children does not matter. -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <include
+        layout="@layout/view_sidebar"
+        android:layout_width="@dimen/sidebar_width"
+        android:layout_height="match_parent" />
+
+    <!-- Takes the width that is left, and all of it when the sidebar is closed. -->
+    <include
+        layout="@layout/view_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_toEndOf="@id/sidebar" />
+
+    <!-- Named in both arrangements so that showSidebar can find it either way, and never shown
+         here: with the two columns side by side there is nothing for it to dim. -->
+    <View
+        android:id="@+id/scrim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+</RelativeLayout>

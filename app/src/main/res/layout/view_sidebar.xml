@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sidebar: the reading history and the folders, and the gear that opens the menu.
+
+     One definition, included by both arrangements of the home screen, so the two cannot
+     drift apart in what they contain — only in where the panel sits. See
+     layout/activity_main.xml and layout-sw600dp-land/activity_main.xml.
+
+     A card rather than a plain LinearLayout, because a panel that floats over the grid has
+     to be opaque and a root with android:background is exactly what lint's Overdraw check
+     reports on a layout that is included by an activity's. MaterialCardView paints its own
+     surface, so the panel gets the colour it needs and the warning that a background on a
+     root is drawn over the window's does not apply. Corner radius 0 keeps it a panel rather
+     than a card, and the elevation is what casts the shadow onto the content behind it.
+
+     It is not a DrawerLayout. A drawer would bring edge-swipe with it, and the content column
+     is a grid that scrolls sideways on no screen: the swipe would have nothing to compete
+     with on a phone and would fight the grid's own horizontal scroll on a tablet. The design
+     asks for a panel that opens and closes, which is this. -->
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/sidebar"
+    android:layout_width="@dimen/sidebar_width"
+    android:layout_height="match_parent"
+    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+    app:cardCornerRadius="0dp"
+    app:cardElevation="8dp"
+    app:strokeWidth="0dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- The toggle lives here while the panel is out, and in the content column's title
+             bar while it is away. One action, two places, because a button that closes a
+             panel is useless underneath it. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sidebarToggle"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="4dp"
+            android:contentDescription="@string/close_sidebar"
+            app:icon="@drawable/ic_panel"
+            app:iconGravity="textStart"
+            app:iconSize="28dp" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/sidebarList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="8dp"
+            android:scrollbars="vertical" />
+
+        <!-- The reader's own preferences, which have no other home: the home screen has no
+             settings screen and the menu they open is the one the title bar used to carry. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/settingsButton"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginBottom="8dp"
+            android:contentDescription="@string/more_options"
+            app:icon="@drawable/ic_settings"
+            app:iconGravity="textStart"
+            app:iconSize="24dp" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

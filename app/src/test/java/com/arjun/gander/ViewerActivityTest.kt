@@ -53,6 +53,9 @@ class ViewerActivityTest {
         context = ApplicationProvider.getApplicationContext()
         FixtureProvider.install()
         Thumbs.resetForTests()
+        // The viewer records what it opens through the library, on the library's own thread.
+        // Running that inline is what lets a test assert on the history it wrote.
+        (context as GanderApp).library.io = directExecutor()
     }
 
     @After
@@ -634,24 +637,26 @@ class ViewerActivityTest {
 
     @Test
     fun openingAPickedFileRemembersIt() {
-        context.getSharedPreferences("recents", Context.MODE_PRIVATE).edit().clear().commit()
         val uri = FixtureProvider.uriNamed("six-pages.pdf", "Alder Court.pdf")
         viewFromGander(uri)
-        assertThat(Recents.all(context).map { it.name }).containsExactly("Alder Court.pdf")
+        assertThat(history()).containsExactly("Alder Court.pdf")
     }
 
     /**
-     * Recents fills from Gander's own screens, which is where the picker is. Another app
+     * The history fills from Gander's own screens, which is where the picker is. Another app
      * offering a grant Gander could keep would otherwise put an entry there, under a name of
      * its own choosing, for the reader to tap later.
      */
     @Test
     fun aFileAnotherAppHandsOverIsNotRemembered() {
-        context.getSharedPreferences("recents", Context.MODE_PRIVATE).edit().clear().commit()
         val controller = view(FixtureProvider.uriNamed("six-pages.pdf", "Your statement.pdf"))
         assertThat(controller.loadedUrl()).contains("viewer/pdf.html")
-        assertThat(Recents.all(context)).isEmpty()
+        assertThat(history()).isEmpty()
     }
+
+    /** The reading history, which is where the old recents list lives now. */
+    private fun history(): List<String> =
+        (context as GanderApp).library.recents().map { it.name }
 
     /**
      * The save picker outlives the activity if Android reclaims the process

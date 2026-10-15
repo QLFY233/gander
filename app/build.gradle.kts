@@ -221,6 +221,11 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    // Pull to refresh on the content column, which is the only thing that moves the library
+    // index: a pull is a full rescan of every imported folder. Material 1.12 does not bring
+    // this in — Material 3's own pull-to-refresh is Compose only — and it is plain
+    // Apache-2.0, so licences.md needs no new entry.
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
     implementation("androidx.webkit:webkit:1.16.0")
     // Zoomable image view that tiles huge bitmaps
     implementation("com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0")

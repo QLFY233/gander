@@ -121,6 +121,59 @@ internal const val FOLDER_COLOR_COUNT = 10
 internal fun folderColorIndex(seed: String): Int =
     Math.floorMod(seed.hashCode(), FOLDER_COLOR_COUNT)
 
+/**
+ * The ten folder colours, in the order `folderColorIndex` counts them.
+ *
+ * The shades live in `values-night` for the layer behind each of these, which is the only
+ * part of the palette that has to change with the theme: on a dark ground a darker shade
+ * disappears into it, so at night the back layer is lightened instead of darkened. The ten
+ * fronts measure at least 3:1 against both grounds, which is why they are written once.
+ */
+private val FOLDER_COLORS = intArrayOf(
+    R.color.folder_0, R.color.folder_1, R.color.folder_2, R.color.folder_3, R.color.folder_4,
+    R.color.folder_5, R.color.folder_6, R.color.folder_7, R.color.folder_8, R.color.folder_9
+)
+
+private val FOLDER_DRAWABLES = intArrayOf(
+    R.drawable.folder_0, R.drawable.folder_1, R.drawable.folder_2, R.drawable.folder_3,
+    R.drawable.folder_4, R.drawable.folder_5, R.drawable.folder_6, R.drawable.folder_7,
+    R.drawable.folder_8, R.drawable.folder_9
+)
+
+/** The colour resource for a folder's slot, for tinting a heading or a label with it. */
+internal fun folderColorRes(colorIndex: Int): Int =
+    FOLDER_COLORS[Math.floorMod(colorIndex, FOLDER_COLOR_COUNT)]
+
+/** The two-layer folder drawable for a folder's slot. */
+internal fun folderDrawable(colorIndex: Int): Int =
+    FOLDER_DRAWABLES[Math.floorMod(colorIndex, FOLDER_COLOR_COUNT)]
+
+/**
+ * The icon for a file, by kind and then by extension where the kind covers two shapes.
+ *
+ * A video and an audio file are the same [FileKind.PLAYER] and nothing else tells them apart,
+ * so the extension is asked here the way the badge palette already asks it. The icon is drawn
+ * in one colour and tinted at the point of use, which is what lets a card's type icon and a
+ * sidebar row's be the same picture.
+ */
+internal fun iconFor(name: String, mime: String?): Int {
+    val ext = name.substringAfterLast('.', "").lowercase()
+    return when (FileKind.detect(ext, mime)) {
+        FileKind.PDF -> R.drawable.ic_kind_pdf
+        FileKind.DOCX, FileKind.PROSE -> R.drawable.ic_kind_docx
+        FileKind.XLSX -> R.drawable.ic_kind_xlsx
+        FileKind.PPTX -> R.drawable.ic_kind_ppt
+        FileKind.IMAGE, FileKind.IMAGE_WEB -> R.drawable.ic_kind_image
+        FileKind.PLAYER ->
+            if (FileKind.isAudioExt(ext)) R.drawable.ic_kind_audio else R.drawable.ic_kind_video
+        FileKind.MD -> R.drawable.ic_kind_md
+        FileKind.TEXT -> R.drawable.ic_kind_txt
+        FileKind.MODEL -> R.drawable.ic_kind_3d
+        FileKind.ARCHIVE -> R.drawable.ic_kind_archive
+        FileKind.UNSUPPORTED -> R.drawable.ic_kind_generic
+    }
+}
+
 /** The two or three letters, and the colour behind them, for a file. */
 internal fun badgeFor(name: String, mime: String?): Pair<String, Int> {
     val ext = name.substringAfterLast('.', "").lowercase()

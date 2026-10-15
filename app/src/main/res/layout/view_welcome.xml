@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The first run, in place of the grid rather than at the top of it.
+
+     This used to be the first rows of the one list the screen had, which meant the screen
+     opened on a paragraph, a four line list of formats, a tip that looked tappable and was
+     not, and then a Folders heading with only an Add row beneath it. A centred block is the
+     wrong shape for a list row, so it is a sibling of the grid now and each replaces the
+     other. render() decides which.
+
+     ScrollView because the block has to survive landscape and the largest system font size;
+     fillViewport because without it the child would only be as tall as its contents and
+     gravity="center" would have nothing to centre within. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/welcome"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingStart="32dp"
+        android:paddingTop="24dp"
+        android:paddingEnd="32dp"
+        android:paddingBottom="40dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/welcome_headline"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
+
+        <!-- Filled by MainActivity from WELCOME_BADGES, not declared nine times here, so
+             adding a kind is one line in one place and the grid can never disagree with the
+             badges on the rows.
+
+             The column count is a resource rather than a measurement. Three across needs
+             268dp including this layout's padding, and the narrowest phone has 320dp to
+             give, so it fits everywhere in either orientation.
+
+             A values-land override putting all nine on one row was tried and dropped: it
+             needs 676dp, which a 411x731dp emulator has and a 720p xhdpi phone (360x640dp)
+             does not, so the last tiles were clipped on one of the commonest geometries
+             there is. In phone landscape the block scrolls instead, which is what the
+             ScrollView is for. If it is worth revisiting, shrink the tiles for that
+             qualifier rather than adding columns, and check the arithmetic against 533dp
+             before 731dp. -->
+        <!-- Note for a future qualifier: smallestWidth outranks orientation in the resource
+             table, so values-sw600dp beats a values-land on a landscape tablet, and
+             resolution is per resource name rather than per folder. -->
+        <GridLayout
+            android:id="@+id/formatGrid"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:columnCount="@integer/welcome_grid_columns"
+            android:focusable="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:gravity="center"
+            android:lineSpacingExtra="2dp"
+            android:text="@string/welcome_promise"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <!-- The two ways a file reaches Gander, in priority order. Both are the same two
+             actions the title bar offers, which is deliberate: a first run has no folders to
+             put an import into, so the empty state is where the two entries are explained at
+             length. minWidth rather than a fixed width so a large system font size grows the
+             button instead of ellipsising the label. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/importFilesButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:minWidth="@dimen/welcome_action_min_width"
+            android:text="@string/import_files" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/importFolderButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minWidth="@dimen/welcome_action_min_width"
+            android:text="@string/import_folder" />
+    </LinearLayout>
+</ScrollView>

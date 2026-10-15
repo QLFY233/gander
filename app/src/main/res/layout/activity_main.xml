@@ -1,190 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The two arrangements of the home screen.
+
+     This one is the overlay: the sidebar floats over the content with a scrim behind it,
+     which is what a phone gets in either orientation and a tablet gets held upright. A
+     tablet held sideways gets layout-sw600dp-land/activity_main.xml instead, where the two
+     sit side by side. Both include the same two files, so the difference is only where the
+     sidebar is put; the widgets, their ids and their behaviour are written once. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <LinearLayout
+    <include layout="@layout/view_content" />
+
+    <!-- Dims the content rather than moving it, and takes the tap that closes the panel. -->
+    <View
+        android:id="@+id/scrim"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:background="@color/gander_scrim"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone" />
 
-        <!-- The wordmark is a sibling of the toolbar rather than a child of it.
-
-             Both app:titleCentered and a Toolbar child view with gravity=center centre
-             against the room left over once the navigation icon and the overflow button
-             have taken theirs, which puts the mark a visible 24dp off the middle of the
-             screen. An overlay in this FrameLayout centres against the whole width.
-
-             It is never clickable, so a tap lands on the toolbar underneath, and at about
-             105dp wide it cannot reach the overflow button on any phone. -->
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorSurface">
-
-            <com.google.android.material.appbar.MaterialToolbar
-                android:id="@+id/toolbar"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
-
-            <!-- Shown only at the root; render() hides it inside a folder, where the
-                 toolbar's own title carries the folder name beside the back arrow. -->
-            <LinearLayout
-                android:id="@+id/lockup"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:visibility="gone">
-
-                <!-- The adaptive icon itself, so this is the same object that was tapped
-                     to get here and there is no second copy of the art to drift. It
-                     carries the device's own icon mask, which is the shape the launcher
-                     drew it in a moment ago, and the debug variant's own icon in a debug
-                     build. -->
-                <ImageView
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:importantForAccessibility="no"
-                    android:src="@mipmap/ic_launcher" />
-
-                <!-- Filled white in the drawable and tinted here, because a ?attr colour
-                     resolved inside vector XML depends on the inflation path. -->
-                <ImageView
-                    android:id="@+id/wordmark"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="9dp"
-                    android:contentDescription="@string/app_name"
-                    android:src="@drawable/ic_wordmark"
-                    app:tint="?attr/colorOnSurface" />
-            </LinearLayout>
-        </FrameLayout>
-
-        <!-- Sits between the toolbar and the list while a folder is being read, the
-             same shape the viewer uses for a long save. Only appears if the read takes
-             long enough to be worth mentioning; see RENDER_PROGRESS_DELAY_MS. -->
-        <com.google.android.material.progressindicator.LinearProgressIndicator
-            android:id="@+id/loadProgress"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:indeterminate="true"
-            android:visibility="gone"
-            app:trackCornerRadius="0dp" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/list"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:paddingBottom="88dp" />
-
-        <!-- The first run, in place of the list rather than at the top of it.
-
-             This used to be row_welcome.xml, a row in the RecyclerView, which meant the
-             screen opened on a paragraph, a four line list of formats, a tip that looked
-             tappable and was not, and then a Folders heading with only the Add row beneath
-             it. A centred block is the wrong shape for a list row, so it is a sibling of
-             the list now and each replaces the other. render() decides which.
-
-             ScrollView because the block has to survive landscape and the largest system
-             font size; fillViewport because without it the child would only be as tall as
-             its contents and gravity="center" would have nothing to centre within. -->
-        <ScrollView
-            android:id="@+id/welcome"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:fillViewport="true"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:paddingStart="32dp"
-                android:paddingTop="24dp"
-                android:paddingEnd="32dp"
-                android:paddingBottom="40dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:text="@string/welcome_headline"
-                    android:textAppearance="?attr/textAppearanceHeadlineSmall" />
-
-                <!-- Filled by MainActivity from WELCOME_BADGES, not declared nine times
-                     here, so adding a kind is one line in one place and the grid can
-                     never disagree with the badges on the rows.
-
-                     The column count is a resource rather than a measurement. Three across
-                     needs 268dp including this layout's padding, and the narrowest phone
-                     has 320dp to give, so it fits everywhere in either orientation.
-
-                     A values-land override putting all nine on one row was tried and
-                     dropped: it needs 676dp, which a 411x731dp emulator has and a 720p
-                     xhdpi phone (360x640dp) does not, so the last tiles were clipped on
-                     one of the commonest geometries there is. In phone landscape the block
-                     scrolls instead, which is what the ScrollView is for. If it is worth
-                     revisiting, shrink the tiles for that qualifier rather than adding
-                     columns, and check the arithmetic against 533dp before 731dp. -->
-                <!-- Note for a future qualifier: smallestWidth outranks orientation in the
-                     resource table, so values-sw600dp beats a values-land on a landscape
-                     tablet, and resolution is per resource name rather than per folder. -->
-                <GridLayout
-                    android:id="@+id/formatGrid"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="28dp"
-                    android:columnCount="@integer/welcome_grid_columns"
-                    android:focusable="true" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="28dp"
-                    android:gravity="center"
-                    android:lineSpacingExtra="2dp"
-                    android:text="@string/welcome_promise"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
-
-                <!-- The two ways a file reaches Gander, in priority order. Both call the
-                     launchers the FAB and the old Add row already used; there is no third
-                     route into the picker. minWidth rather than a fixed width so a large
-                     system font size grows the button instead of ellipsising the label. -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/openFileButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="32dp"
-                    android:minWidth="@dimen/welcome_action_min_width"
-                    android:text="@string/open_a_file" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/addFolderButton"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:minWidth="@dimen/welcome_action_min_width"
-                    android:text="@string/add_folder" />
-            </LinearLayout>
-        </ScrollView>
-    </LinearLayout>
-
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/openFab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="20dp"
-        android:text="@string/open_a_file" />
+    <include
+        layout="@layout/view_sidebar"
+        android:layout_width="@dimen/sidebar_width"
+        android:layout_height="match_parent"
+        android:layout_gravity="start" />
 </FrameLayout>

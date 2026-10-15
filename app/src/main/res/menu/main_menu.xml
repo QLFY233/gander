@@ -1,16 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-    <!-- Folder actions: visible only when browsing inside a folder -->
+    <!-- The two things the title bar itself offers, at its right-hand end. Search collapses
+         into a field in the bar rather than opening a screen of its own: the filter applies to
+         the grid underneath, so the grid has to stay where it is. -->
+    <item
+        android:id="@+id/action_search"
+        android:title="@string/search_files"
+        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:showAsAction="always|collapseActionView" />
+    <!-- One entry for both imports, which ask which they are in a dialog rather than putting
+         two similar icons side by side. New folder is a third, separate action: it makes
+         something inside Gander, and sharing an icon with a file picker would be a lie about
+         where the folder comes from. -->
+    <item
+        android:id="@+id/action_import"
+        android:icon="@drawable/ic_import"
+        android:title="@string/import_files"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/action_new_folder"
+        android:icon="@drawable/ic_add"
+        android:title="@string/new_folder"
+        app:showAsAction="always" />
+
+    <!-- Folder actions and the reader's own preferences, all of them global now that there is
+         no folder to be inside: the content column is every folder at once, so sort and filter
+         apply to every section. That is why neither is hidden any more, and why the menu is
+         reached from the gear at the foot of the sidebar rather than from the title bar. -->
     <item
         android:id="@+id/action_sort"
         android:title="@string/sort_by"
-        android:visible="false"
         app:showAsAction="never" />
     <item
         android:id="@+id/action_filter"
         android:title="@string/filter"
-        android:visible="false"
         app:showAsAction="never" />
 
     <!-- Rate on a copy Google Play installed, the only install a rating can come from.

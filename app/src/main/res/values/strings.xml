@@ -15,16 +15,68 @@
          nine, the same way a file row carries the description for its own four views. It
          names what the ETC tile stands for as well, which a list read aloud has room for. -->
     <string name="welcome_formats_spoken">Opens PDFs, Word documents, Excel spreadsheets, PowerPoint slides, images, video, audio, Markdown, text files, zips and 3D models.</string>
-    <string name="open_a_file">Open a file</string>
     <string name="recent_files">Recent files</string>
     <string name="folders">Folders</string>
-    <string name="add_folder">Add a folder</string>
     <!-- Where a picked file goes when the folder it came from cannot be worked out: a cloud
          provider, or an app's own private directory. Files from one directory are filed
          together under that directory's name; this is the name used when there is none. -->
     <string name="imported_files">Imported files</string>
     <!-- The display name of a granted tree whose provider would not say what it is called. -->
     <string name="imported_folder_fallback">Imported folder</string>
+
+    <!-- The content column's title. Not "All files": Gander has no storage permission and can
+         see only the files somebody handed it, so that would be a claim it cannot keep. What
+         the column holds is folders, and every file is inside one of them. -->
+    <string name="all_folders">All folders</string>
+    <string name="search_files">Search files</string>
+    <string name="import_files">Import files</string>
+    <string name="import_folder">Import folder</string>
+    <string name="new_folder">New folder</string>
+    <string name="folder_name">Folder name</string>
+    <string name="rename">Rename</string>
+    <string name="delete">Delete</string>
+    <string name="open">Open</string>
+    <string name="move_to">Move to…</string>
+    <string name="remove_from_library">Remove from the library</string>
+
+    <!-- Deleting a made-up folder forgets an index and nothing else, which is a different
+         thing from giving back a grant, so the two say different words. Both say the files
+         themselves stay, because that is the one thing a reader needs to be sure of. -->
+    <string name="delete_virtual_title">Delete this folder?</string>
+    <string name="delete_virtual_message">Nothing in %1$s is deleted. Gander forgets the folder and the list of what was in it.</string>
+    <string name="remove_file_title">Remove from the library?</string>
+    <string name="remove_file_message">%1$s stays where it is. Gander forgets it, and opening it again means importing it again.</string>
+
+    <!-- Search. The second line is the honest one: the index is a snapshot taken when a
+         folder was first opened, so a file in a folder nobody has opened is not there to be
+         found, and saying "nothing found" without saying why would be a lie. -->
+    <string name="search_no_results">Nothing in the library matches \u201C%1$s\u201D.</string>
+    <string name="search_not_scanned">Folders you have not opened yet are not searched. Open one to add it to the library.</string>
+    <string name="unscanned_hint">Open this folder to list what is in it.</string>
+
+    <!-- Said once, when a folder turns out to hold more files than the index will take. A
+         plural rather than a string because the number is the point of the sentence, which is
+         also what lint asks for wherever a %d is followed by a word. -->
+
+    <!-- The two ways the sidebar is moved. It is a panel of folders, so it is named for what
+         it holds rather than for the arrow on the button. -->
+    <string name="open_sidebar">Show folders</string>
+    <string name="close_sidebar">Hide folders</string>
+    <string name="refreshing">Checking your folders</string>
+    <!-- The gear at the bottom of the sidebar, which opens the same menu the title bar
+         used to carry. Named for the menu rather than for the picture on it. -->
+    <string name="more_options">More options</string>
+
+    <plurals name="section_files">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+
+    <!-- The ceiling on what one folder contributes to the index. The quantity is a constant
+         today, and it is still a quantity: the sentence is about a number of files. -->
+    <plurals name="import_truncated">
+        <item quantity="other">This folder holds more files than Gander indexes. The first %1$d are shown.</item>
+    </plurals>
     <string name="no_recents_hint">Files you open appear here for quick access.</string>
     <string name="no_folders_hint">Grant a folder to browse its files right here. Gander needs no storage permission to do it.</string>
     <string name="empty_folder">Nothing to show in this folder.</string>
@@ -76,8 +128,6 @@
          no way to re-take a released grant, so the reader would have to walk the system picker
          again. Hence a question first and an Undo after, issue #39. The row is swiped away
          over a bin, so each question says the thing itself stays where it is. -->
-    <string name="remove_recent_title">Remove from recent files?</string>
-    <string name="remove_recent_message">%1$s stays where it is, but Gander will lose access to it. Opening it again means finding it in the system picker.</string>
     <string name="remove_folder_title">Remove folder?</string>
     <string name="remove_folder_message">Nothing in %1$s is deleted, but Gander will lose access to it. Granting it back means finding it in the system picker again.</string>
     <!-- Also the TalkBack label for removing a row, which the swipe does -->
@@ -180,7 +230,6 @@
     <string name="sort_smallest">Smallest first</string>
     <string name="reset_filter">Reset filter</string>
     <string name="filter_subtitle">Filtered: %1$s</string>
-    <string name="filter_empty">No files match the active filter.</string>
     <string name="filter_pdf">PDF</string>
     <string name="filter_doc">Word documents</string>
     <string name="filter_xls">Excel spreadsheets</string>

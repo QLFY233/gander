@@ -459,6 +459,17 @@ internal class Library(private val app: Context) {
         changed(null)
     }
 
+    /**
+     * Records an open from a screen that is not already on a background thread.
+     *
+     * The viewer learns a file was opened while it is putting that file on screen, which is the
+     * main thread, and a database write there is a frame the reader does not get. Nothing waits
+     * for this: the history is a convenience, and the file is open either way.
+     */
+    fun recordOpenedAsync(uri: Uri, name: String) {
+        io.execute { recordOpened(uri, name) }
+    }
+
     /** Drops one entry from the reading history. The file itself, and any ref, is untouched. */
     @Synchronized
     fun forgetOpened(uri: String) {

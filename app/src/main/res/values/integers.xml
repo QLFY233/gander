@@ -2,4 +2,13 @@
 <resources>
     <integer name="welcome_grid_columns">3</integer>
     <integer name="home_list_columns">1</integer>
+
+    <!-- The content column's card grid is as wide as it fits rather than a fixed number of
+         columns: cardColumns divides the available width by home_card_min_width and clamps
+         the answer between these two. Two is the narrowest a phone gets (a 360dp phone
+         gives 328dp of content and 168dp cards, so two fit and three do not), and six is
+         where a card on a large tablet stops growing with the screen and starts being one of
+         a row of postage stamps. -->
+    <integer name="home_card_min_columns">2</integer>
+    <integer name="home_card_max_columns">6</integer>
 </resources>

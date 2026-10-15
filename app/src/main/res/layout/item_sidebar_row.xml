@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One row of either sidebar list: a recent file, a folder, or a file inside an expanded
+     folder.
+
+     One layout for all three, because the difference between them is which of the two
+     trailing views is showing. A folder carries the arrow that opens it; a file carries
+     neither, and is pushed in by the adapter so the folder above it reads as its parent.
+     The file rows have no thumbnail on purpose: a sidebar row is 56dp and a cover in it
+     would be a second, worse copy of what the content column already shows. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sidebarRow"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/sidebar_row_height"
+    android:background="?attr/selectableItemBackground"
+    android:baselineAligned="false"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingEnd="16dp"
+    android:paddingStart="@dimen/sidebar_row_inset">
+
+    <ImageView
+        android:id="@+id/sidebarIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_kind_folder" />
+
+    <TextView
+        android:id="@+id/sidebarTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+    <ImageView
+        android:id="@+id/sidebarChevron"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginStart="8dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_down"
+        android:visibility="gone" />
+</LinearLayout>

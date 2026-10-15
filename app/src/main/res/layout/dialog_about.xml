@@ -14,9 +14,23 @@
         android:paddingTop="4dp"
         android:paddingBottom="8dp">
 
+        <!-- The wordmark, which used to sit at the top of the home screen. That screen's
+             title bar belongs to the content column now and names the column rather than the
+             app, so the mark moved here: this is where a reader looks for what this is. -->
+        <ImageView
+            android:layout_width="wrap_content"
+            android:layout_height="20dp"
+            android:layout_marginStart="24dp"
+            android:layout_marginTop="4dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="@string/app_name"
+            android:src="@drawable/ic_wordmark"
+            app:tint="?attr/colorOnSurface" />
+
         <TextView
             android:id="@+id/aboutVersion"
             style="@style/Widget.Gander.About.Body"
+            android:layout_marginTop="6dp"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant"
             tools:text="Version 1.10" />

@@ -2,27 +2,21 @@ package com.arjun.gander
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.android.material.appbar.MaterialToolbar
 import com.google.common.truth.Truth.assertThat
 import java.time.Duration
-import java.util.concurrent.Executor
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.TimeUnit
-import kotlin.math.abs
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -34,24 +28,29 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 
 /**
- * The home screen: recents, granted folders, and the first-run explainer.
+ * The home screen: the sidebar, the content column, and the first-run explainer.
  *
- * The folder read normally happens on a background thread, which would make
- * every assertion here a race. [directExecutor] runs it inline instead, so a
- * test asserts on a screen that has finished drawing.
+ * The screen reads its index and its folders on a background thread, which would make every
+ * assertion here a race. Both executors are replaced with ones that run inline — the screen's
+ * own loader and the library's refresh thread — so a test asserts on a screen that has finished
+ * drawing.
  */
 @RunWith(AndroidJUnit4::class)
 class MainActivityTest {
 
     private lateinit var context: Context
+    private lateinit var provider: FixtureProvider
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        FixtureProvider.install()
+        provider = FixtureProvider.install()
         Thumbs.resetForTests()
-        context.getSharedPreferences("recents", Context.MODE_PRIVATE)
-            .edit().clear().commit()
+        Covers.resetForTests()
+        // The library is the app's, and the app is a new one for every test, so the index starts
+        // empty. Its refresh thread is not: a rescan is a background walk of every imported
+        // folder, and a test wants it to have finished by the time it looks.
+        (context as GanderApp).library.io = directExecutor()
         context.contentResolver.persistedUriPermissions.forEach {
             context.contentResolver.releasePersistableUriPermission(
                 it.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -68,38 +67,7 @@ class MainActivityTest {
         shadowOf(context.mainLooper).idleFor(Duration.ofSeconds(10))
     }
 
-    /** Runs everything submitted to it on the calling thread. */
-    private fun directExecutor(): ExecutorService {
-        val direct = Executor { it.run() }
-        return object : ExecutorService, Executor by direct {
-            override fun shutdown() = Unit
-            override fun shutdownNow() = emptyList<Runnable>()
-            override fun isShutdown() = false
-            override fun isTerminated() = false
-            override fun awaitTermination(timeout: Long, unit: TimeUnit) = true
-            override fun <T : Any?> submit(task: java.util.concurrent.Callable<T>) =
-                throw UnsupportedOperationException()
-            override fun <T : Any?> submit(task: Runnable, result: T) =
-                throw UnsupportedOperationException()
-            override fun submit(task: Runnable) = throw UnsupportedOperationException()
-            override fun <T : Any?> invokeAll(
-                tasks: MutableCollection<out java.util.concurrent.Callable<T>>
-            ) = throw UnsupportedOperationException()
-            override fun <T : Any?> invokeAll(
-                tasks: MutableCollection<out java.util.concurrent.Callable<T>>,
-                timeout: Long,
-                unit: TimeUnit
-            ) = throw UnsupportedOperationException()
-            override fun <T : Any?> invokeAny(
-                tasks: MutableCollection<out java.util.concurrent.Callable<T>>
-            ) = throw UnsupportedOperationException()
-            override fun <T : Any?> invokeAny(
-                tasks: MutableCollection<out java.util.concurrent.Callable<T>>,
-                timeout: Long,
-                unit: TimeUnit
-            ) = throw UnsupportedOperationException()
-        }
-    }
+    private val library: Library get() = (context as GanderApp).library
 
     private fun home(state: Bundle? = null): ActivityController<MainActivity> {
         val controller = Robolectric.buildActivity(MainActivity::class.java)
@@ -109,46 +77,110 @@ class MainActivityTest {
         }
     }
 
-    private fun ActivityController<MainActivity>.list(): RecyclerView =
-        get().findViewById(R.id.list)
+    private fun ActivityController<MainActivity>.toolbar(): MaterialToolbar =
+        get().findViewById(R.id.toolbar)
 
-    private fun ActivityController<MainActivity>.welcome(): View =
-        get().findViewById(R.id.welcome)
+    private fun ActivityController<MainActivity>.sidebar(): View = get().findViewById(R.id.sidebar)
+    private fun ActivityController<MainActivity>.scrim(): View = get().findViewById(R.id.scrim)
+    private fun ActivityController<MainActivity>.welcome(): View = get().findViewById(R.id.welcome)
+    private fun ActivityController<MainActivity>.grid(): RecyclerView =
+        get().findViewById(R.id.contentList)
 
-    /** Every row's title, read off the adapter through a bound holder. */
-    private fun ActivityController<MainActivity>.rowTitles(): List<String> {
-        val rv = list()
-        val adapter = rv.adapter!!
-        return (0 until adapter.itemCount).mapNotNull { position ->
-            val type = adapter.getItemViewType(position)
-            val holder = adapter.createViewHolder(rv, type)
+    private fun ActivityController<MainActivity>.sidebarList(): RecyclerView =
+        get().findViewById(R.id.sidebarList)
+
+    /** Every bound row's text under [id], in order, whichever adapter is asked. */
+    private fun texts(list: RecyclerView, id: Int): List<String> =
+        (0 until list.adapter!!.itemCount).mapNotNull { position ->
+            val adapter = list.adapter!!
+            val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
             adapter.bindViewHolder(holder, position)
-            holder.itemView.findViewById<TextView>(R.id.title)?.text?.toString()
-                ?: holder.itemView.findViewById<TextView>(R.id.headerText)?.text?.toString()
+            holder.itemView.findViewById<TextView>(id)?.text?.toString()
         }
+
+    private fun ActivityController<MainActivity>.sectionTitles() =
+        texts(grid(), R.id.sectionTitle)
+
+    private fun ActivityController<MainActivity>.cardTitles() = texts(grid(), R.id.cardTitle)
+
+    private fun ActivityController<MainActivity>.sidebarTitles() =
+        texts(sidebarList(), R.id.sidebarTitle)
+
+    private fun ActivityController<MainActivity>.sidebarHeaders() =
+        texts(sidebarList(), R.id.sidebarHeaderText)
+
+    private fun ActivityController<MainActivity>.hints() = texts(grid(), R.id.hintText)
+
+    /** Clicks the row whose [id] text is [title], in [list]. */
+    private fun clickRow(list: RecyclerView, id: Int, title: String) {
+        val adapter = list.adapter!!
+        val position = (0 until adapter.itemCount).first { position ->
+            val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
+            adapter.bindViewHolder(holder, position)
+            holder.itemView.findViewById<TextView>(id)?.text?.toString() == title
+        }
+        val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
+        adapter.bindViewHolder(holder, position)
+        holder.itemView.performClick()
+        shadowOf(context.mainLooper).idle()
     }
 
-    private fun granted(fixture: String, name: String) {
-        val uri = FixtureProvider.uriFor(fixture)
-        context.contentResolver.takePersistableUriPermission(
-            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+    private fun ActivityController<MainActivity>.clickCard(title: String) =
+        clickRow(grid(), R.id.cardTitle, title)
+
+    private fun ActivityController<MainActivity>.clickSection(title: String) =
+        clickRow(grid(), R.id.sectionTitle, title)
+
+    /** A granted folder holding one subfolder and four files, one of them hidden. */
+    private fun grantedFolder(name: String = "Documents"): Uri {
+        val id = "root-${name.lowercase()}"
+        FakeDocumentsProvider.install().folder(
+            id,
+            name,
+            ChildDoc("sub", "Leases", MIME_DIR, 0, 0),
+            ChildDoc("f1", "zeta.txt", "text/plain", 2048, 0),
+            ChildDoc("f2", "alpha.txt", "text/plain", 1024, 0),
+            ChildDoc("f3", ".hidden.txt", "text/plain", 512, 0),
+            ChildDoc("f4", "mid.txt", "text/plain", 1536, 0)
         )
-        Recents.add(context, uri, name)
+        return FakeDocumentsProvider.treeUri(id)
     }
+
+    /** Imports a granted folder into the library, which is what a granted folder now is. */
+    private fun imported(name: String = "Documents"): Long = library.importTree(grantedFolder(name))
+
+    /** A file from outside Gander, picked rather than granted as a tree. */
+    private fun picked(name: String): Uri {
+        val uri = provider.add(name, Fixtures.sized(name, 16))
+        library.importPicked(listOf(uri))
+        return uri
+    }
+
+    private fun latestDialog(): AlertDialog? = ShadowDialog.getLatestDialog() as? AlertDialog
+
+    private fun AlertDialog.titles(): List<String> =
+        (0 until listView.adapter.count).map { listView.adapter.getItem(it).toString() }
+
+    private fun answer(which: Int) {
+        latestDialog()!!.getButton(which).performClick()
+        shadowOf(context.mainLooper).idle()
+    }
+
+    private fun persistedUris(): List<String> =
+        context.contentResolver.persistedUriPermissions.map { it.uri.toString() }
+
+    private fun ActivityController<MainActivity>.undo(): View? =
+        get().findViewById(com.google.android.material.R.id.snackbar_action)
 
     // ---------------------------------------------------------------
     // First run
     // ---------------------------------------------------------------
 
-    /**
-     * Nothing opened and no folder granted, so there is nothing to list. The
-     * explainer takes the whole screen rather than an empty list taking it.
-     */
     @Test
-    fun aFirstRunShowsTheExplainerInsteadOfAnEmptyList() {
+    fun aFirstRunShowsTheExplainerInsteadOfAnEmptyGrid() {
         val controller = home()
         assertThat(controller.welcome().visibility).isEqualTo(View.VISIBLE)
-        assertThat(controller.list().visibility).isEqualTo(View.GONE)
+        assertThat(controller.grid().visibility).isEqualTo(View.GONE)
     }
 
     @Test
@@ -160,10 +192,7 @@ class MainActivityTest {
         assertThat(labels).containsExactlyElementsIn(WELCOME_BADGES.map { it.first }).inOrder()
     }
 
-    /**
-     * TalkBack reads one sentence for the grid rather than walking nine tiles
-     * that mean nothing one at a time.
-     */
+    /** TalkBack reads one sentence for the grid rather than walking nine meaningless tiles. */
     @Test
     fun theExplainerGridIsOneStopForAScreenReader() {
         val grid = home().get().findViewById<ViewGroup>(R.id.formatGrid)
@@ -172,77 +201,201 @@ class MainActivityTest {
     }
 
     @Test
-    fun theExplainerGoesOnceSomethingHasBeenOpened() {
-        granted("six-pages.pdf", "Alder Court.pdf")
+    fun theExplainerGoesOnceAFolderHasBeenImported() {
+        imported()
         val controller = home()
         assertThat(controller.welcome().visibility).isEqualTo(View.GONE)
-        assertThat(controller.list().visibility).isEqualTo(View.VISIBLE)
+        assertThat(controller.grid().visibility).isEqualTo(View.VISIBLE)
     }
 
     // ---------------------------------------------------------------
-    // Recents
+    // The two columns
     // ---------------------------------------------------------------
 
     @Test
-    fun recentsAreListedNewestFirstUnderTheirOwnHeading() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        granted("budget.xlsx", "Q3 Budget.xlsx")
-
-        val titles = home().rowTitles()
-
-        assertThat(titles).contains(context.getString(R.string.recent_files))
-        assertThat(titles.filter { it.contains('.') })
-            .containsExactly("Q3 Budget.xlsx", "Alder Court.pdf").inOrder()
-    }
-
-    @Test
-    fun aRecentWhoseGrantIsGoneDropsOffTheScreen() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        granted("budget.xlsx", "Q3 Budget.xlsx")
-        context.contentResolver.releasePersistableUriPermission(
-            FixtureProvider.uriFor("budget.xlsx"), Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
-
-        val titles = home().rowTitles()
-
-        assertThat(titles).contains("Alder Court.pdf")
-        assertThat(titles).doesNotContain("Q3 Budget.xlsx")
-    }
-
-    /** Tapping a recent opens it in the viewer, with a read grant attached. */
-    @Test
-    fun tappingARecentOpensItInTheViewer() {
-        granted("six-pages.pdf", "Alder Court.pdf")
+    fun aFolderBecomesASectionAndItsFilesBecomeCards() {
+        imported()
         val controller = home()
-        val rv = controller.list()
-        val adapter = rv.adapter!!
 
-        val position = (0 until adapter.itemCount).first { position ->
-            val holder = adapter.createViewHolder(rv, adapter.getItemViewType(position))
-            adapter.bindViewHolder(holder, position)
-            holder.itemView.findViewById<TextView>(R.id.title)?.text?.toString() ==
-                "Alder Court.pdf"
-        }
-        val holder = adapter.createViewHolder(rv, adapter.getItemViewType(position))
-        adapter.bindViewHolder(holder, position)
-        holder.itemView.performClick()
+        assertThat(controller.sectionTitles()).containsExactly("Documents")
+        assertThat(controller.cardTitles())
+            .containsExactly("zeta.txt", "alpha.txt", "mid.txt")
+    }
+
+    /** A granted tree is flattened: a subdirectory is a route to files, never a card. */
+    @Test
+    fun aSubdirectoryIsNotASectionOrACard() {
+        imported()
+        val controller = home()
+        assertThat(controller.cardTitles()).doesNotContain("Leases")
+        assertThat(controller.sectionTitles()).doesNotContain("Leases")
+    }
+
+    @Test
+    fun dotfilesAreNotShown() {
+        imported()
+        assertThat(home().cardTitles()).doesNotContain(".hidden.txt")
+    }
+
+    @Test
+    fun theSidebarListsTheFolderToo() {
+        imported()
+        val controller = home()
+        assertThat(controller.sidebarHeaders())
+            .containsExactly(
+                context.getString(R.string.recent_files),
+                context.getString(R.string.folders)
+            ).inOrder()
+        assertThat(controller.sidebarTitles()).contains("Documents")
+    }
+
+    /** The reading history is its own list, and it is not the index. */
+    @Test
+    fun anOpenedFileAppearsInTheSidebarHistory() {
+        val uri = picked("Alder Court.pdf")
+        library.recordOpened(uri, "Alder Court.pdf")
+        assertThat(home().sidebarTitles()).contains("Alder Court.pdf")
+    }
+
+    // ---------------------------------------------------------------
+    // The sidebar's two arrangements
+    // ---------------------------------------------------------------
+
+    @Test
+    fun aPhoneStartsWithTheSidebarAway() {
+        val controller = home()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+        assertThat(controller.scrim().visibility).isEqualTo(View.GONE)
+        // And the way to open it is at the left of the content column's title bar, because a
+        // button that closes a panel is useless underneath it.
+        assertThat(controller.toolbar().navigationIcon).isNotNull()
+    }
+
+    @Test
+    @Config(qualifiers = "sw600dp-land")
+    fun aLandscapeTabletStartsWithTheSidebarOut() {
+        val controller = home()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
+        // Side by side, so there is nothing to dim.
+        assertThat(controller.scrim().visibility).isEqualTo(View.GONE)
+        assertThat(controller.toolbar().navigationIcon).isNull()
+    }
+
+    @Test
+    fun theToggleOpensAndClosesTheFloatingSidebar() {
+        val controller = home()
+
+        controller.get().toggleSidebar()
+        shadowOf(context.mainLooper).idle()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
+        assertThat(controller.scrim().visibility).isEqualTo(View.VISIBLE)
+        // While it is out the icon would close the panel it sits under, so it goes.
+        assertThat(controller.toolbar().navigationIcon).isNull()
+
+        controller.get().toggleSidebar()
+        shadowOf(context.mainLooper).idle()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+        assertThat(controller.scrim().visibility).isEqualTo(View.GONE)
+        assertThat(controller.toolbar().navigationIcon).isNotNull()
+    }
+
+    /** A tap on the dimmed content column puts the sidebar away, as does the button in it. */
+    @Test
+    fun theScrimAndTheSidebarsOwnButtonBothCloseIt() {
+        val controller = home()
+        controller.get().toggleSidebar()
+        controller.scrim().performClick()
+        shadowOf(context.mainLooper).idle()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+
+        controller.get().toggleSidebar()
+        controller.get().findViewById<View>(R.id.sidebarToggle).performClick()
+        shadowOf(context.mainLooper).idle()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+    }
+
+    /** What the reader answered is remembered, so the next screen starts where they left it. */
+    @Test
+    fun theSidebarsStateIsRemembered() {
+        home().get().toggleSidebar()
+        assertThat(Settings.sidebarOpen(context)).isTrue()
+        assertThat(home().sidebar().visibility).isEqualTo(View.VISIBLE)
+    }
+
+    @Test
+    fun theBackGestureClosesAFloatingSidebar() {
+        val controller = home()
+        controller.get().toggleSidebar()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
+
+        controller.get().onBackPressedDispatcher.onBackPressed()
+        shadowOf(context.mainLooper).idle()
+
+        assertThat(controller.sidebar().visibility).isEqualTo(View.GONE)
+        assertThat(controller.get().isFinishing).isFalse()
+    }
+
+    @Test
+    @Config(qualifiers = "sw600dp-land")
+    fun theBackGestureLeavesAFixedSidebarAlone() {
+        val controller = home()
+        controller.get().onBackPressedDispatcher.onBackPressed()
+        shadowOf(context.mainLooper).idle()
+        assertThat(controller.sidebar().visibility).isEqualTo(View.VISIBLE)
+    }
+
+    // ---------------------------------------------------------------
+    // Sections
+    // ---------------------------------------------------------------
+
+    @Test
+    fun theFirstSectionOpensAndTheRestFold() {
+        imported("First")
+        imported("Second")
+        val controller = home()
+
+        assertThat(controller.sectionTitles()).containsExactly("First", "Second").inOrder()
+        // Only the first folder's files are cards: the rest are one row each until asked for.
+        assertThat(controller.cardTitles()).containsExactly("zeta.txt", "alpha.txt", "mid.txt")
+    }
+
+    @Test
+    fun tappingASectionHeadingFoldsItAndRemembers() {
+        val id = imported()
+        val controller = home()
+
+        controller.clickSection("Documents")
+        assertThat(controller.cardTitles()).isEmpty()
+
+        // A new screen draws it folded, because the reader said so.
+        val second = home()
+        assertThat(second.sectionTitles()).containsExactly("Documents")
+        assertThat(second.cardTitles()).isEmpty()
+        assertThat(Settings.sectionCollapsed(context, "node.$id", true)).isTrue()
+    }
+
+    @Test
+    fun tappingACardOpensItInTheViewer() {
+        imported()
+        val controller = home()
+
+        controller.clickCard("zeta.txt")
 
         val started = shadowOf(controller.get()).nextStartedActivity
         assertThat(started.component!!.className).isEqualTo(ViewerActivity.INTERNAL_VIEWER)
-        assertThat(started.data.toString()).contains("six-pages.pdf")
+        assertThat(started.data.toString()).contains("f1")
         assertThat(started.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION).isNotEqualTo(0)
     }
 
     /**
-     * A back swipe shows this screen as it was last drawn on its way out, so a tap still
-     * fading when a document opened came back lit. The press has to be gone by the pause;
-     * clearing it on the way back in was tried on a phone and changed nothing.
+     * A back swipe shows this screen as it was last drawn on its way out, so a tap still fading
+     * when a document opened came back lit. The press has to be gone by the pause.
      */
     @Test
     fun aTapHighlightIsGoneBeforeTheScreenLeaves() {
-        granted("six-pages.pdf", "Alder Court.pdf")
+        imported()
         val controller = home()
-        val list = controller.list()
+        val list = controller.grid()
         val rows = (0 until list.childCount).map { list.getChildAt(it) }.filter { it.isClickable }
         assertThat(rows).isNotEmpty()
         rows.forEach { it.isPressed = true }
@@ -253,417 +406,245 @@ class MainActivityTest {
     }
 
     // ---------------------------------------------------------------
-    // Layout
+    // Sorting and filtering
     // ---------------------------------------------------------------
 
     @Test
-    fun aPhoneListsInOneColumn() {
-        val manager = home().list().layoutManager as GridLayoutManager
-        assertThat(manager.spanCount).isEqualTo(1)
+    fun sortAppliesToEverySection() {
+        imported()
+        val controller = home()
+        controller.toolbar().menu.performIdentifierAction(R.id.action_sort, 0)
+        shadowOf(context.mainLooper).idle()
+
+        val which = Settings.SortOrder.LARGEST.ordinal
+        latestDialog()!!.listView.performItemClick(null, which, which.toLong())
+        shadowOf(context.mainLooper).idle()
+
+        assertThat(Settings.sortOrder(context)).isEqualTo(Settings.SortOrder.LARGEST)
+        // zeta is 2048 bytes, mid 1536, alpha 1024.
+        assertThat(controller.cardTitles())
+            .containsExactly("zeta.txt", "mid.txt", "alpha.txt").inOrder()
     }
 
-    /**
-     * A tablet gets two columns of files, which is the whole of the tablet
-     * layout: one integer overridden in values-sw600dp.
-     */
     @Test
-    @Config(qualifiers = "sw600dp")
-    fun aTabletListsInTwoColumns() {
-        val manager = home().list().layoutManager as GridLayoutManager
-        assertThat(manager.spanCount).isEqualTo(2)
-    }
+    fun filterHidesWhatDoesNotMatchAndSaysSoInTheSubtitle() {
+        imported()
+        val controller = home()
+        controller.toolbar().menu.performIdentifierAction(R.id.action_filter, 0)
+        shadowOf(context.mainLooper).idle()
 
-    /**
-     * Headings span the full width whatever the column count, and so does an
-     * out-of-range position: the layout manager asks about positions mid-update
-     * and a cell-shaped guess would throw where a heading-shaped one reflows.
-     */
-    @Test
-    @Config(qualifiers = "sw600dp")
-    fun headingsAndOutOfRangePositionsSpanTheWholeWidth() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        val manager = home().list().layoutManager as GridLayoutManager
-        // position 0 is the Recents heading
-        assertThat(manager.spanSizeLookup.getSpanSize(0)).isEqualTo(2)
-        assertThat(manager.spanSizeLookup.getSpanSize(9999)).isEqualTo(2)
-    }
-
-    // ---------------------------------------------------------------
-    // State across a rotation
-    // ---------------------------------------------------------------
-
-    /** Grants a folder holding one subfolder and two files, and answers its tree URI. */
-    private fun grantedFolder(write: Boolean = false): android.net.Uri {
-        FakeDocumentsProvider.install()
-            .folder(
-                "root", "Documents",
-                ChildDoc("sub", "Leases", MIME_DIR, 0, 0),
-                ChildDoc("f1", "zeta.pdf", "application/pdf", 2048, 0),
-                ChildDoc("f2", "alpha.pdf", "application/pdf", 1024, 0),
-                ChildDoc("f3", ".hidden.pdf", "application/pdf", 512, 0),
-            )
-        val tree = FakeDocumentsProvider.treeUri()
-        context.contentResolver.takePersistableUriPermission(
-            tree,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                (if (write) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
-        )
-        return tree
-    }
-
-    /** Clicks the first row whose title is [title]. */
-    private fun ActivityController<MainActivity>.clickRow(title: String) {
-        val rv = list()
-        val adapter = rv.adapter!!
-        val position = (0 until adapter.itemCount).first { position ->
-            val holder = adapter.createViewHolder(rv, adapter.getItemViewType(position))
-            adapter.bindViewHolder(holder, position)
-            holder.itemView.findViewById<TextView>(R.id.title)?.text?.toString() == title
+        val dialog = latestDialog()!!
+        val container = dialog.findViewById<ViewGroup>(R.id.filterItemsContainer)!!
+        for (i in 0 until container.childCount) {
+            val row = container.getChildAt(i)
+            if (row.findViewById<TextView>(R.id.filterBadge).text == "TXT") row.performClick()
         }
-        val holder = adapter.createViewHolder(rv, adapter.getItemViewType(position))
-        adapter.bindViewHolder(holder, position)
-        holder.itemView.performClick()
-        shadowOf(context.mainLooper).idle()
-    }
-
-    @Test
-    fun aGrantedFolderIsListedUnderItsProviderGivenName() {
-        grantedFolder()
-        val titles = home().rowTitles()
-        assertThat(titles).contains(context.getString(R.string.folders))
-        assertThat(titles).contains("Documents")
-    }
-
-    /** Directories first, then files by name, and dotfiles nowhere. */
-    @Test
-    fun openingAFolderListsItInOrderWithDotfilesHidden() {
-        grantedFolder()
-        val controller = home()
-        controller.clickRow("Documents")
-
-        val titles = controller.rowTitles()
-
-        assertThat(titles).containsAtLeast("Leases", "alpha.pdf", "zeta.pdf").inOrder()
-        assertThat(titles).doesNotContain(".hidden.pdf")
-    }
-
-    /** Inside a folder the toolbar names it, and the wordmark stands down. */
-    @Test
-    fun theToolbarNamesTheFolderYouAreIn() {
-        grantedFolder()
-        val controller = home()
-        val toolbar = controller.get()
-            .findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-        assertThat(toolbar.title.isNullOrEmpty()).isTrue()
-
-        controller.clickRow("Documents")
-
-        assertThat(toolbar.title.toString()).isEqualTo("Documents")
-        assertThat(controller.get().findViewById<View>(R.id.lockup).visibility)
-            .isEqualTo(View.GONE)
-    }
-
-    @Test
-    fun backComesOutOfAFolder() {
-        grantedFolder()
-        val controller = home()
-        controller.clickRow("Documents")
-
-        controller.get().onBackPressedDispatcher.onBackPressed()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         shadowOf(context.mainLooper).idle()
 
-        assertThat(controller.rowTitles()).contains(context.getString(R.string.folders))
+        assertThat(controller.cardTitles()).hasSize(3)
+        assertThat(controller.toolbar().subtitle?.toString())
+            .isEqualTo(context.getString(R.string.filter_subtitle, "TXT"))
     }
 
-    /**
-     * A tablet is rotated constantly, and losing your place three folders deep
-     * on every turn is where this was found.
-     */
     @Test
-    fun theFolderYouAreInSurvivesARotation() {
-        grantedFolder()
-        val first = home()
-        first.clickRow("Documents")
+    fun filterDropsASectionThatHoldsNothingMatching() {
+        imported()
+        val controller = home()
+        controller.toolbar().menu.performIdentifierAction(R.id.action_filter, 0)
+        shadowOf(context.mainLooper).idle()
+
+        val dialog = latestDialog()!!
+        val container = dialog.findViewById<ViewGroup>(R.id.filterItemsContainer)!!
+        for (i in 0 until container.childCount) {
+            val row = container.getChildAt(i)
+            if (row.findViewById<TextView>(R.id.filterBadge).text == "PDF") row.performClick()
+        }
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(context.mainLooper).idle()
+
+        // Nothing here is a PDF, so the folder's heading goes with its cards.
+        assertThat(controller.sectionTitles()).isEmpty()
+        assertThat(controller.cardTitles()).isEmpty()
+    }
+
+    @Test
+    fun aFilterSurvivesARotation() {
+        imported()
+        val controller = home()
+        controller.toolbar().menu.performIdentifierAction(R.id.action_filter, 0)
+        shadowOf(context.mainLooper).idle()
+        val dialog = latestDialog()!!
+        val container = dialog.findViewById<ViewGroup>(R.id.filterItemsContainer)!!
+        container.getChildAt(0).performClick()
+        val badge = (container.getChildAt(0).findViewById<TextView>(R.id.filterBadge)).text.toString()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(context.mainLooper).idle()
 
         val state = Bundle()
-        first.saveInstanceState(state)
-        assertThat(state.getStringArrayList("stack.treeUris")).hasSize(1)
-        assertThat(state.getStringArrayList("stack.labels")).containsExactly("Documents")
+        controller.saveInstanceState(state)
+        assertThat(state.getStringArrayList("active_filters")).containsExactly(badge)
 
         val second = home(state)
+        assertThat(second.toolbar().subtitle?.toString())
+            .isEqualTo(context.getString(R.string.filter_subtitle, badge))
+    }
 
-        val toolbar = second.get()
-            .findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-        assertThat(toolbar.title.toString()).isEqualTo("Documents")
-        assertThat(second.rowTitles()).contains("alpha.pdf")
+    // ---------------------------------------------------------------
+    // Search
+    // ---------------------------------------------------------------
+
+    private fun ActivityController<MainActivity>.search(text: String) {
+        val view = toolbar().menu.findItem(R.id.action_search).actionView as SearchView
+        view.setQuery(text, false)
+        shadowOf(context.mainLooper).idle()
+    }
+
+    @Test
+    fun searchHidesTheCardsThatDoNotMatch() {
+        imported()
+        val controller = home()
+        controller.search("zeta")
+        assertThat(controller.cardTitles()).containsExactly("zeta.txt")
     }
 
     /**
-     * A truncated bundle would index out of bounds while restoring three
-     * parallel lists. Landing at the root is where a failure would land anyway.
+     * A search that finds nothing says so, and says why: the index is a snapshot, so a file in a
+     * folder nobody has opened is not there to be found. "Nothing found" without that would be a
+     * lie of omission.
      */
     @Test
-    fun aTruncatedBundleLandsAtTheRootRatherThanCrashing() {
-        val damaged = Bundle().apply {
-            putStringArrayList("stack.treeUris", arrayListOf("content://a/tree/1", "content://a/tree/2"))
-            putStringArrayList("stack.docIds", arrayListOf("1"))
-            putStringArrayList("stack.labels", arrayListOf("One", "Two"))
-        }
-        val controller = home(damaged)
-        assertThat(controller.welcome().visibility).isEqualTo(View.VISIBLE)
+    fun anEmptySearchExplainsItself() {
+        imported()
+        val controller = home()
+        controller.search("nothing like this")
+        assertThat(controller.cardTitles()).isEmpty()
+        assertThat(controller.hints()).contains(context.getString(R.string.search_not_scanned))
+    }
+
+    // ---------------------------------------------------------------
+    // Refresh
+    // ---------------------------------------------------------------
+
+    @Test
+    fun aPullRescansEveryImportedFolder() {
+        val id = imported()
+        val controller = home()
+
+        FakeDocumentsProvider.install().folder(
+            "root", "Documents", ChildDoc("n", "new.txt", "text/plain", 10, 10)
+        )
+        controller.get().pullToRefresh()
+        shadowOf(context.mainLooper).idle()
+
+        assertThat(controller.cardTitles()).containsExactly("new.txt")
+        assertThat(library.node(id)!!.scannedAt).isNotNull()
     }
 
     // ---------------------------------------------------------------
     // Removal
     // ---------------------------------------------------------------
 
-    /** The row titled [title] as the list has laid it out on screen. */
-    private fun ActivityController<MainActivity>.shownRow(title: String): View {
-        val rv = list()
-        return (0 until rv.childCount).map { rv.getChildAt(it) }.first {
-            it.findViewById<TextView>(R.id.title)?.text?.toString() == title
+    private fun ActivityController<MainActivity>.longPressCard(title: String) {
+        val list = grid()
+        val adapter = list.adapter!!
+        val position = (0 until adapter.itemCount).first { position ->
+            val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
+            adapter.bindViewHolder(holder, position)
+            holder.itemView.findViewById<TextView>(R.id.cardTitle)?.text?.toString() == title
         }
-    }
-
-    /**
-     * Drags the row titled [title] towards the end by [fraction] of its width and lets go, as a
-     * finger would, through the ItemTouchHelper the list really has. [stepMs] apart, the moves
-     * are fast enough to count as a fling at 16 and too slow for one at 150. Answers how far the
-     * row went while it was held.
-     *
-     * The list is drawn after every step, because the helper moves a row as it draws it, and
-     * nothing draws here unless asked.
-     */
-    private fun ActivityController<MainActivity>.swipeRow(
-        title: String,
-        fraction: Float = 0.8f,
-        stepMs: Long = 16,
-    ): Float {
-        val rv = list()
-        val row = shownRow(title)
-        val canvas = Canvas(Bitmap.createBitmap(rv.width, rv.height, Bitmap.Config.ARGB_8888))
-        val y = row.top + row.height / 2f
-        val from = row.left + row.width * 0.1f
-        val to = from + row.width * fraction
-        val down = SystemClock.uptimeMillis()
-        var time = down
-        var furthest = 0f
-        fun send(action: Int, x: Float) {
-            val event = MotionEvent.obtain(down, time, action, x, y, 0)
-            rv.dispatchTouchEvent(event)
-            event.recycle()
-            shadowOf(context.mainLooper).idleFor(Duration.ofMillis(stepMs))
-            rv.draw(canvas)
-            furthest = maxOf(furthest, abs(row.translationX))
-            time += stepMs
-        }
-        send(MotionEvent.ACTION_DOWN, from)
-        for (step in 1..10) send(MotionEvent.ACTION_MOVE, from + (to - from) * step / 10)
-        send(MotionEvent.ACTION_UP, to)
-        // The row flies off, or back, and a swipe is reported once it has gone
-        shadowOf(context.mainLooper).idleFor(Duration.ofSeconds(1))
-        rv.draw(canvas)
-        return furthest
-    }
-
-    private fun latestDialog(): AlertDialog? =
-        ShadowDialog.getLatestDialog() as? AlertDialog
-
-    private fun AlertDialog.title(): String =
-        findViewById<TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString()
-
-    private fun persistedUris(): List<String> =
-        context.contentResolver.persistedUriPermissions.map { it.uri.toString() }
-
-    private fun ActivityController<MainActivity>.undo(): View? =
-        get().findViewById(com.google.android.material.R.id.snackbar_action)
-
-    private fun answer(which: Int) {
-        latestDialog()!!.getButton(which).performClick()
+        val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
+        adapter.bindViewHolder(holder, position)
+        holder.itemView.performLongClick()
         shadowOf(context.mainLooper).idle()
     }
 
-    /** Long enough for the Undo bar to have come and gone. */
-    private fun waitOutTheUndoBar() {
-        shadowOf(context.mainLooper).idleFor(Duration.ofSeconds(6))
-    }
-
-    /** Issue #39: holding a recent file removed it on the spot, and was easy to do by accident. */
     @Test
-    fun holdingARowRemovesNothing() {
-        granted("six-pages.pdf", "Alder Court.pdf")
+    fun aCardsMenuOffersTheFileActions() {
+        imported()
         val controller = home()
+        controller.longPressCard("zeta.txt")
 
-        controller.shownRow("Alder Court.pdf").performLongClick()
-        shadowOf(context.mainLooper).idle()
-
-        assertThat(latestDialog()).isNull()
-        assertThat(controller.rowTitles()).contains("Alder Court.pdf")
-    }
-
-    /** Swiped past halfway, the row is asked about, and nothing has gone yet. */
-    @Test
-    fun swipingARecentAwayAsksFirst() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        val controller = home()
-
-        assertThat(controller.swipeRow("Alder Court.pdf")).isGreaterThan(0f)
-
-        val dialog = latestDialog()
-        assertThat(dialog?.isShowing).isTrue()
-        assertThat(dialog!!.title()).isEqualTo(context.getString(R.string.remove_recent_title))
-        assertThat(persistedUris()).contains(FixtureProvider.uriFor("six-pages.pdf").toString())
-    }
-
-    /** Let go short of halfway, and slowly, the row springs back and nothing is asked. */
-    @Test
-    fun aShortSwipeSpringsBack() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        val controller = home()
-
-        val moved = controller.swipeRow("Alder Court.pdf", fraction = 0.3f, stepMs = 150)
-
-        assertThat(moved).isGreaterThan(0f)
-        assertThat(latestDialog()).isNull()
-        assertThat(controller.shownRow("Alder Court.pdf").translationX).isEqualTo(0f)
+        assertThat(latestDialog()!!.titles()).containsExactly(
+            context.getString(R.string.open),
+            context.getString(R.string.move_to),
+            context.getString(R.string.remove_from_library),
+            context.getString(R.string.share_file)
+        ).inOrder()
     }
 
     /**
-     * Headings, hints and Add a folder stay put under a swipe. Removable rows offer Remove to a
-     * screen reader, which cannot swipe a row, and the rest offer nothing.
+     * Removed, the card goes at once, but the file's grant stays until the Undo bar has gone,
+     * since Android cannot give one back.
      */
     @Test
-    fun onlyRowsThatCanBeRemovedMove() {
-        grantedFolder()
+    fun removingAPickedFileKeepsItsGrantUntilTheUndoBarGoes() {
+        val uri = picked("statement.txt")
         val controller = home()
 
-        assertThat(controller.swipeRow(context.getString(R.string.add_folder))).isEqualTo(0f)
-        assertThat(latestDialog()).isNull()
-
-        val dismiss = AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS.id
-        val folder = controller.shownRow("Documents").createAccessibilityNodeInfo()!!
-            .actionList.firstOrNull { it.id == dismiss }
-        assertThat(folder?.label.toString()).isEqualTo(context.getString(R.string.remove))
-        val add = controller.shownRow(context.getString(R.string.add_folder))
-            .createAccessibilityNodeInfo()!!.actionList.firstOrNull { it.id == dismiss }
-        assertThat(add).isNull()
-    }
-
-    /** Remove, from a screen reader's list of actions, asks as the swipe does. */
-    @Test
-    fun aScreenReaderCanRemoveARowToo() {
-        grantedFolder()
-        val controller = home()
-
-        controller.shownRow("Documents").performAccessibilityAction(
-            AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS.id, null
-        )
+        controller.longPressCard("statement.txt")
+        latestDialog()!!.listView.performItemClick(null, 2, 2L)
         shadowOf(context.mainLooper).idle()
-
-        assertThat(latestDialog()!!.title()).isEqualTo(context.getString(R.string.remove_folder_title))
-    }
-
-    /**
-     * Removed, the row goes at once, but the file's grant stays until the Undo bar has gone, since
-     * Android cannot give one back.
-     */
-    @Test
-    fun aRemovedRecentKeepsItsGrantUntilTheUndoBarGoes() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        val file = FixtureProvider.uriFor("six-pages.pdf").toString()
-        val controller = home()
-
-        controller.swipeRow("Alder Court.pdf")
         answer(AlertDialog.BUTTON_POSITIVE)
 
-        assertThat(controller.rowTitles()).doesNotContain("Alder Court.pdf")
+        assertThat(controller.cardTitles()).doesNotContain("statement.txt")
         assertThat(controller.undo()?.isShown).isTrue()
-        assertThat(persistedUris()).contains(file)
+        assertThat(persistedUris()).contains(uri.toString())
 
-        waitOutTheUndoBar()
+        shadowOf(context.mainLooper).idleFor(Duration.ofSeconds(6))
 
-        assertThat(persistedUris()).doesNotContain(file)
-        assertThat(Recents.all(context).map { it.name }).doesNotContain("Alder Court.pdf")
+        assertThat(persistedUris()).doesNotContain(uri.toString())
+        assertThat(library.search("statement")).isEmpty()
     }
 
     @Test
-    fun undoPutsTheRowBackWithItsGrant() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        val file = FixtureProvider.uriFor("six-pages.pdf").toString()
+    fun undoPutsTheCardBackWithItsGrant() {
+        val uri = picked("statement.txt")
         val controller = home()
-        controller.swipeRow("Alder Court.pdf")
+
+        controller.longPressCard("statement.txt")
+        latestDialog()!!.listView.performItemClick(null, 2, 2L)
+        shadowOf(context.mainLooper).idle()
         answer(AlertDialog.BUTTON_POSITIVE)
 
         controller.undo()!!.performClick()
         shadowOf(context.mainLooper).idle()
-        waitOutTheUndoBar()
+        shadowOf(context.mainLooper).idleFor(Duration.ofSeconds(6))
 
-        assertThat(controller.rowTitles()).contains("Alder Court.pdf")
-        assertThat(persistedUris()).contains(file)
+        assertThat(controller.cardTitles()).contains("statement.txt")
+        assertThat(persistedUris()).contains(uri.toString())
     }
 
     /** A bar nobody is looking at can no longer be answered, so the removal goes through. */
     @Test
     fun leavingTheScreenCarriesARemovalOut() {
-        granted("six-pages.pdf", "Alder Court.pdf")
-        val file = FixtureProvider.uriFor("six-pages.pdf").toString()
+        val uri = picked("statement.txt")
         val controller = home()
-        controller.swipeRow("Alder Court.pdf")
+
+        controller.longPressCard("statement.txt")
+        latestDialog()!!.listView.performItemClick(null, 2, 2L)
+        shadowOf(context.mainLooper).idle()
         answer(AlertDialog.BUTTON_POSITIVE)
 
         controller.pause().stop()
 
-        assertThat(persistedUris()).doesNotContain(file)
-    }
-
-    /** The file or folder stays where it is, and the grant with it, and so does the row. */
-    @Test
-    fun cancellingKeepsTheRowAndItsGrant() {
-        val tree = grantedFolder()
-        val controller = home()
-        controller.swipeRow("Documents")
-
-        answer(AlertDialog.BUTTON_NEGATIVE)
-        shadowOf(context.mainLooper).idleFor(Duration.ofSeconds(1))
-        val rv = controller.list()
-        rv.draw(Canvas(Bitmap.createBitmap(rv.width, rv.height, Bitmap.Config.ARGB_8888)))
-
-        assertThat(persistedUris()).contains(tree.toString())
-        assertThat(controller.rowTitles()).contains("Documents")
-        // Back in its place, not left off the side of the screen
-        assertThat(controller.shownRow("Documents").translationX).isEqualTo(0f)
+        assertThat(persistedUris()).doesNotContain(uri.toString())
     }
 
     /**
-     * A folder added on a build that could rename files was granted write access as well as read.
-     * Removing it gave back the read half only, and the write half stayed, out of sight: the list
-     * shows read grants alone, so nothing on screen could reach it again.
-     */
-    @Test
-    fun removingAFolderGivesBackWriteAccessToo() {
-        val tree = grantedFolder(write = true)
-        val controller = home()
-        controller.swipeRow("Documents")
-
-        answer(AlertDialog.BUTTON_POSITIVE)
-        waitOutTheUndoBar()
-
-        assertThat(persistedUris()).doesNotContain(tree.toString())
-        assertThat(controller.rowTitles()).doesNotContain("Documents")
-    }
-
-    /**
-     * Gander's own primary is a burnt red, so tinting only the destructive button left
-     * the two within dE 4.6 of each other on the light palette: near enough to the 2.3 a
-     * person can notice that the colour marked nothing and made Cancel look dangerous
-     * too. Both roles are asserted, because the bug was the pair being alike rather than
-     * either one being wrong.
+     * Gander's own primary is a burnt red, so tinting only the destructive button left the two
+     * within dE 4.6 of each other on the light palette: near enough to the 2.3 a person can
+     * notice that the colour marked nothing and made Cancel look dangerous too. Both roles are
+     * asserted, because the bug was the pair being alike rather than either one being wrong.
      */
     @Test
     fun theDestructiveButtonDoesNotLookLikeTheDismissiveOne() {
-        grantedFolder()
+        picked("statement.txt")
         val controller = home()
-        controller.swipeRow("Documents")
+
+        controller.longPressCard("statement.txt")
+        latestDialog()!!.listView.performItemClick(null, 2, 2L)
+        shadowOf(context.mainLooper).idle()
         val dialog = latestDialog()!!
 
         val remove = dialog.getButton(AlertDialog.BUTTON_POSITIVE).currentTextColor
@@ -675,24 +656,136 @@ class MainActivityTest {
     }
 
     // ---------------------------------------------------------------
+    // Deleting a folder
+    // ---------------------------------------------------------------
+
+    @Test
+    fun deletingAnImportedFolderGivesBackTheGrant() {
+        val tree = grantedFolder()
+        library.importTree(tree)
+        val controller = home()
+
+        controller.longPressSection("Documents")
+
+        assertThat(latestDialog()!!.titles()).containsExactly(
+            context.getString(R.string.rename), context.getString(R.string.delete)
+        ).inOrder()
+        latestDialog()!!.listView.performItemClick(null, 1, 1L)
+        shadowOf(context.mainLooper).idle()
+        assertThat(latestDialog()!!.title())
+            .isEqualTo(context.getString(R.string.remove_folder_title))
+        answer(AlertDialog.BUTTON_POSITIVE)
+
+        assertThat(persistedUris()).doesNotContain(tree.toString())
+        assertThat(controller.sectionTitles()).isEmpty()
+        assertThat(controller.welcome().visibility).isEqualTo(View.VISIBLE)
+    }
+
+    private fun ActivityController<MainActivity>.longPressSection(title: String) {
+        val list = grid()
+        val adapter = list.adapter!!
+        val position = (0 until adapter.itemCount).first { position ->
+            val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
+            adapter.bindViewHolder(holder, position)
+            holder.itemView.findViewById<TextView>(R.id.sectionTitle)?.text?.toString() == title
+        }
+        val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
+        adapter.bindViewHolder(holder, position)
+        holder.itemView.performLongClick()
+        shadowOf(context.mainLooper).idle()
+    }
+
+    @Test
+    fun renamingAFolderKeepsItsFilesAndItsColour() {
+        val id = imported()
+        val before = library.node(id)!!.colorIndex
+        val controller = home()
+
+        controller.longPressSection("Documents")
+        latestDialog()!!.listView.performItemClick(null, 0, 0L)
+        shadowOf(context.mainLooper).idle()
+        val field = latestDialog()!!.findViewById<android.widget.EditText>(R.id.textField)!!
+        field.setText("Leases")
+        answer(AlertDialog.BUTTON_POSITIVE)
+
+        assertThat(library.node(id)!!.name).isEqualTo("Leases")
+        assertThat(library.node(id)!!.colorIndex).isEqualTo(before)
+        assertThat(controller.sectionTitles()).containsExactly("Leases")
+        assertThat(controller.cardTitles()).hasSize(3)
+    }
+
+    // ---------------------------------------------------------------
+    // Layout
+    // ---------------------------------------------------------------
+
+    /**
+     * The three points the design names, as arithmetic: a 360dp phone, an 800dp tablet held
+     * upright, and the 964dp a 1280dp tablet has left beside a 300dp sidebar.
+     */
+    @Test
+    fun theColumnCountFollowsTheRoomTheContentColumnGot() {
+        assertThat(cardColumns(344, 168, 2, 6)).isEqualTo(2)
+        assertThat(cardColumns(784, 168, 2, 6)).isEqualTo(4)
+        assertThat(cardColumns(964, 168, 2, 6)).isEqualTo(5)
+    }
+
+    @Test
+    fun aCardIsOneCellAndAHeadingIsTheWholeWidth() {
+        imported()
+        val controller = home()
+        val manager = controller.grid().layoutManager as GridLayoutManager
+        assertThat(manager.spanSizeLookup.getSpanSize(0)).isEqualTo(manager.spanCount)
+        assertThat(manager.spanSizeLookup.getSpanSize(1)).isEqualTo(1)
+        // Out of range answers full span: the layout manager asks about positions mid-update,
+        // and a heading-shaped guess reflows where a cell-shaped one would throw.
+        assertThat(manager.spanSizeLookup.getSpanSize(9999)).isEqualTo(manager.spanCount)
+    }
+
+    // ---------------------------------------------------------------
+    // The import entry points
+    // ---------------------------------------------------------------
+
+    @Test
+    fun theImportActionOffersBothKinds() {
+        val controller = home()
+        controller.toolbar().menu.performIdentifierAction(R.id.action_import, 0)
+        shadowOf(context.mainLooper).idle()
+
+        assertThat(latestDialog()!!.titles()).containsExactly(
+            context.getString(R.string.import_files),
+            context.getString(R.string.import_folder)
+        ).inOrder()
+    }
+
+    @Test
+    fun newFolderAsksForANameAndThenShowsIt() {
+        val controller = home()
+        controller.toolbar().menu.performIdentifierAction(R.id.action_new_folder, 0)
+        shadowOf(context.mainLooper).idle()
+
+        val field = latestDialog()!!.findViewById<android.widget.EditText>(R.id.textField)!!
+        field.setText("Receipts")
+        answer(AlertDialog.BUTTON_POSITIVE)
+
+        assertThat(library.nodes().map { it.name }).containsExactly("Receipts")
+        assertThat(controller.sectionTitles()).containsExactly("Receipts")
+    }
+
+    // ---------------------------------------------------------------
     // About
     // ---------------------------------------------------------------
 
     /**
-     * The About screen asks Android what the app requests and prints the
-     * answer, rather than printing a claim. This is the assertion that the
-     * answer is still "none".
+     * The About screen asks Android what the app requests and prints the answer, rather than
+     * printing a claim. This is the assertion that the answer is still "none".
      */
     @Test
     fun aboutReportsNoPermissionsBecauseThereAreNone() {
         val controller = home()
-        controller.get().findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-            .menu.performIdentifierAction(R.id.action_about, 0)
+        controller.toolbar().menu.performIdentifierAction(R.id.action_about, 0)
         shadowOf(context.mainLooper).idle()
 
-        val dialog = shadowOf(org.robolectric.shadows.ShadowDialog.getLatestDialog()).let {
-            org.robolectric.shadows.ShadowDialog.getLatestDialog()
-        }
+        val dialog = ShadowDialog.getLatestDialog()
         assertThat(dialog).isNotNull()
         val text = dialog.findViewById<TextView>(R.id.aboutPermissions).text.toString()
         assertThat(text).isEqualTo(context.getString(R.string.about_permissions_none))
@@ -702,13 +795,12 @@ class MainActivityTest {
     // Google Play
     // ---------------------------------------------------------------
 
-    private fun ActivityController<MainActivity>.playItem(): android.view.MenuItem =
-        get().findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-            .menu.findItem(R.id.action_play)
+    private fun ActivityController<MainActivity>.playItem() =
+        toolbar().menu.findItem(R.id.action_play)
 
     /**
-     * A copy installed from an APK is offered the switch to Play, whose listing updates it
-     * in place, and is never asked to rate, since Play takes ratings only from its own copies.
+     * A copy installed from an APK is offered the switch to Play, whose listing updates it in
+     * place, and is never asked to rate, since Play takes ratings only from its own copies.
      */
     @Test
     fun aCopyFromGitHubIsOfferedTheSwitchToPlay() {
@@ -737,8 +829,7 @@ class MainActivityTest {
     @Test
     fun theSwitchOpensGandersListingInThePlayStore() {
         val controller = home()
-        controller.get().findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-            .menu.performIdentifierAction(R.id.action_play, 0)
+        controller.toolbar().menu.performIdentifierAction(R.id.action_play, 0)
 
         val started = shadowOf(controller.get()).nextStartedActivity
         assertThat(started.action).isEqualTo(Intent.ACTION_VIEW)
@@ -746,141 +837,13 @@ class MainActivityTest {
         assertThat(started.`package`).isEqualTo("com.android.vending")
     }
 
-    // ---------------------------------------------------------------
-    // Folder Sort and Filter
-    // ---------------------------------------------------------------
-
+    /** Sort and filter are global now, so neither is hidden: there is no folder to be inside. */
     @Test
-    fun menuShowsHomeOptionsAtHomeAndFolderOptionsInFolder() {
-        grantedFolder()
+    fun sortAndFilterAreAlwaysInTheMenu() {
         val controller = home()
-        val toolbar = controller.get().findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-
-        // At home: share and about visible, sort and filter hidden
-        assertThat(toolbar.menu.findItem(R.id.action_share_app).isVisible).isTrue()
-        assertThat(toolbar.menu.findItem(R.id.action_about).isVisible).isTrue()
-        assertThat(toolbar.menu.findItem(R.id.action_sort).isVisible).isFalse()
-        assertThat(toolbar.menu.findItem(R.id.action_filter).isVisible).isFalse()
-
-        // Inside folder: sort and filter visible, share and about hidden
-        controller.clickRow("Documents")
-        shadowOf(context.mainLooper).idle()
-
-        assertThat(toolbar.menu.findItem(R.id.action_sort).isVisible).isTrue()
-        assertThat(toolbar.menu.findItem(R.id.action_filter).isVisible).isTrue()
-        assertThat(toolbar.menu.findItem(R.id.action_share_app).isVisible).isFalse()
-        assertThat(toolbar.menu.findItem(R.id.action_about).isVisible).isFalse()
-        assertThat(toolbar.menu.findItem(R.id.action_play).isVisible).isFalse()
-
-        // Back to home: home options restored
-        controller.get().onBackPressedDispatcher.onBackPressed()
-        shadowOf(context.mainLooper).idle()
-
-        assertThat(toolbar.menu.findItem(R.id.action_share_app).isVisible).isTrue()
-        assertThat(toolbar.menu.findItem(R.id.action_about).isVisible).isTrue()
-        assertThat(toolbar.menu.findItem(R.id.action_sort).isVisible).isFalse()
-        assertThat(toolbar.menu.findItem(R.id.action_filter).isVisible).isFalse()
-    }
-
-    @Test
-    fun sortDialogChangesSortAndPersists() {
-        grantedFolder()
-        val controller = home()
-        controller.clickRow("Documents")
-        shadowOf(context.mainLooper).idle()
-
-        val toolbar = controller.get().findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-        toolbar.menu.performIdentifierAction(R.id.action_sort, 0)
-        shadowOf(context.mainLooper).idle()
-
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        assertThat(dialog).isNotNull()
-
-        // Select LARGEST (index 4)
-        val which = Settings.SortOrder.LARGEST.ordinal
-        dialog.listView.performItemClick(null, which, which.toLong())
-        shadowOf(context.mainLooper).idle()
-
-        // Check persistence
-        assertThat(Settings.sortOrder(context)).isEqualTo(Settings.SortOrder.LARGEST)
-
-        // Zeta (2048) comes before alpha (1024) when sorted by size descending
-        val titles = controller.rowTitles()
-        assertThat(titles).containsAtLeast("zeta.pdf", "alpha.pdf").inOrder()
-    }
-
-    @Test
-    fun filterDialogFiltersFilesShowsSubtitleAndClearsOnHome() {
-        FakeDocumentsProvider.install()
-            .folder(
-                "root", "Documents",
-                ChildDoc("f1", "doc1.pdf", "application/pdf", 1024, 0),
-                ChildDoc("f2", "notes.txt", "text/plain", 512, 0),
-                ChildDoc("f3", "sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 2048, 0),
-            )
-        val tree = FakeDocumentsProvider.treeUri()
-        context.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        val controller = home()
-        controller.clickRow("Documents")
-        shadowOf(context.mainLooper).idle()
-
-        assertThat(controller.rowTitles()).containsAtLeast("doc1.pdf", "notes.txt", "sheet.xlsx")
-
-        val toolbar = controller.get().findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-        toolbar.menu.performIdentifierAction(R.id.action_filter, 0)
-        shadowOf(context.mainLooper).idle()
-
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        val container = dialog.findViewById<ViewGroup>(R.id.filterItemsContainer)!!
-
-        // Find the PDF row and check it
-        for (i in 0 until container.childCount) {
-            val row = container.getChildAt(i)
-            val badge = row.findViewById<TextView>(R.id.filterBadge)
-            if (badge.text == "PDF") {
-                row.performClick()
-            }
-        }
-
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        shadowOf(context.mainLooper).idle()
-
-        // Only PDF file should be shown and subtitle indicates active filter
-        assertThat(controller.rowTitles()).contains("doc1.pdf")
-        assertThat(controller.rowTitles()).doesNotContain("notes.txt")
-        assertThat(controller.rowTitles()).doesNotContain("sheet.xlsx")
-        assertThat(toolbar.subtitle?.toString()).isEqualTo("Filtered: PDF")
-
-        // Going back to home screen clears the filter and subtitle
-        controller.get().onBackPressedDispatcher.onBackPressed()
-        shadowOf(context.mainLooper).idle()
-
-        assertThat(toolbar.subtitle).isNull()
-
-        // Re-entering folder has filter cleared
-        controller.clickRow("Documents")
-        shadowOf(context.mainLooper).idle()
-        assertThat(toolbar.subtitle).isNull()
-        assertThat(controller.rowTitles()).containsAtLeast("doc1.pdf", "notes.txt", "sheet.xlsx")
-
-        // Set filter again and test saving instance state across rotation
-        toolbar.menu.performIdentifierAction(R.id.action_filter, 0)
-        shadowOf(context.mainLooper).idle()
-        val dialog2 = ShadowDialog.getLatestDialog() as AlertDialog
-        val container2 = dialog2.findViewById<ViewGroup>(R.id.filterItemsContainer)!!
-        container2.getChildAt(0).performClick()
-        dialog2.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        shadowOf(context.mainLooper).idle()
-
-        val state = Bundle()
-        controller.saveInstanceState(state)
-        assertThat(state.getStringArrayList("active_filters")).containsExactly("PDF")
-
-        val second = home(state)
-        val secondToolbar = second.get().findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
-        assertThat(secondToolbar.subtitle?.toString()).isEqualTo("Filtered: PDF")
-        assertThat(second.rowTitles()).contains("doc1.pdf")
-        assertThat(second.rowTitles()).doesNotContain("notes.txt")
-        assertThat(second.rowTitles()).doesNotContain("sheet.xlsx")
+        assertThat(controller.toolbar().menu.findItem(R.id.action_sort).isVisible).isTrue()
+        assertThat(controller.toolbar().menu.findItem(R.id.action_filter).isVisible).isTrue()
+        assertThat(controller.toolbar().menu.findItem(R.id.action_share_app).isVisible).isTrue()
+        assertThat(controller.toolbar().menu.findItem(R.id.action_about).isVisible).isTrue()
     }
 }

@@ -27,4 +27,34 @@
          is two pixels on a 357-page document. syncFastScroll reads the same value, so
          the two cannot drift. -->
     <dimen name="fast_scroll_thumb_min">48dp</dimen>
+
+    <!-- The sidebar. A phone gets the narrower of the two because the panel floats over the
+         content there and every dp it takes is a dp of the file list behind it; a tablet
+         held sideways, where the two sit side by side, gets the width the design draws. See
+         values-sw600dp/dimens.xml for the other one. -->
+    <dimen name="sidebar_width">280dp</dimen>
+
+    <!-- One row of either sidebar list. Tall enough for a 24dp type icon and a name at a
+         large system font size, and the same height for a folder and a file so an expanded
+         folder reads as one block. -->
+    <dimen name="sidebar_row_height">56dp</dimen>
+
+    <!-- What a file row inside an expanded folder is pushed in by, so the folder that holds
+         it is visibly its parent. Also the base inset of every sidebar row, which is why it is
+         a resource: the adapter has to add the two together, and a literal in two places would
+         drift the first time one of them moved. -->
+    <dimen name="sidebar_indent">16dp</dimen>
+    <dimen name="sidebar_row_inset">16dp</dimen>
+
+    <!-- The content column's card grid. A card is never narrower than this, and the column
+         count is the widest fit between two and six: see cardColumns in HomeAdapter.kt.
+         168dp is three 48dp badges and the gap between them, which is the smallest a cover
+         with a filename under it stays readable at. -->
+    <dimen name="home_card_min_width">168dp</dimen>
+
+    <!-- Half of the 16dp between two cards. It is a margin on the card rather than an
+         ItemDecoration on the grid, because a decoration would have to add the same number
+         back as padding and would double up at the edges; as a margin it also spaces the
+         outermost cards from the column's own edge, which is what the grid wants anyway. -->
+    <dimen name="home_card_margin">8dp</dimen>
 </resources>
