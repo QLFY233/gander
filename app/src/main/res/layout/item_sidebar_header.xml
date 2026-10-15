@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- A heading inside the sidebar: the reading history, then the folders. Both start open and
-     both fold, which is what the arrow says. -->
+     both fold, which is what the arrow says.
+
+     The tap ripple is a foreground, not a background: a row that painted its own background
+     would be painting over the window's, which is what lint's Overdraw is about. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/sidebarHeaderRow"
     android:layout_width="match_parent"
     android:layout_height="48dp"
-    android:background="?attr/selectableItemBackground"
     android:baselineAligned="false"
     android:clickable="true"
     android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingStart="16dp"

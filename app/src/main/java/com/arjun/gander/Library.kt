@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import androidx.core.database.sqlite.transaction
 import androidx.core.net.toUri
 import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
@@ -578,8 +579,7 @@ internal class Library(private val app: Context) {
         ).use { c -> c.map(::ref).associateBy { it.uri } }
 
         val seen = mutableSetOf<String>()
-        db.beginTransaction()
-        try {
+        db.transaction {
             result.files.forEach { found ->
                 seen += found.uri
                 val before = existing[found.uri]
@@ -635,9 +635,6 @@ internal class Library(private val app: Context) {
                 ContentValues().apply { put("scanned_at", System.currentTimeMillis()) },
                 "id = ?", arrayOf(folder.id.toString())
             )
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
         return result
     }

@@ -18,11 +18,15 @@
         android:icon="@drawable/ic_import"
         android:title="@string/import_files"
         app:showAsAction="always" />
+    <!-- ifRoom rather than always, which is what lint's AlwaysShowAction asks for past two
+         always actions. The effect is the one the design asks for anyway: the plus stands
+         beside the import icon wherever the title bar has room for it, and only a narrow
+         phone pushes it into the overflow. -->
     <item
         android:id="@+id/action_new_folder"
         android:icon="@drawable/ic_add"
         android:title="@string/new_folder"
-        app:showAsAction="always" />
+        app:showAsAction="ifRoom" />
 
     <!-- Folder actions and the reader's own preferences, all of them global now that there is
          no folder to be inside: the content column is every folder at once, so sort and filter

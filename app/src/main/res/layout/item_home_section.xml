@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- One folder's heading in the content column: its colour, its name, how many files are in
      it, and the arrow that folds it shut. Full width whatever the column count, because it
-     labels the whole section rather than a cell of it. -->
+     labels the whole section rather than a cell of it.
+
+     The tap ripple is a foreground, not a background: a row that painted its own background
+     would be painting over the window's, which is what lint's Overdraw is about. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/sectionRow"
     android:layout_width="match_parent"
     android:layout_height="56dp"
-    android:background="?attr/selectableItemBackground"
     android:baselineAligned="false"
     android:clickable="true"
     android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingStart="16dp"

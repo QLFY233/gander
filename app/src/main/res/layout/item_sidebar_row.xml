@@ -6,15 +6,18 @@
      trailing views is showing. A folder carries the arrow that opens it; a file carries
      neither, and is pushed in by the adapter so the folder above it reads as its parent.
      The file rows have no thumbnail on purpose: a sidebar row is 56dp and a cover in it
-     would be a second, worse copy of what the content column already shows. -->
+     would be a second, worse copy of what the content column already shows.
+
+     The tap ripple is a foreground, not a background: a row that painted its own background
+     would be painting over the window's, which is what lint's Overdraw is about. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/sidebarRow"
     android:layout_width="match_parent"
     android:layout_height="@dimen/sidebar_row_height"
-    android:background="?attr/selectableItemBackground"
     android:baselineAligned="false"
     android:clickable="true"
     android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingEnd="16dp"

@@ -122,7 +122,6 @@
             column="5"/>
     </issue>
 
-
     <issue
         id="NotifyDataSetChanged"
         message="It will always be more efficient to use more specific change events if you can. Rely on `notifyDataSetChanged` as a last resort."
@@ -217,45 +216,12 @@
     <issue
         id="UseKtx"
         message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="            stack.addLast(Crumb(Uri.parse(uris[i]), docIds[i], labels[i]))"
-        errorLine2="                                ~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/arjun/gander/MainActivity.kt"
-            line="247"
-            column="33"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
         errorLine1="        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }"
         errorLine2="                                                               ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/arjun/gander/MainActivity.kt"
             line="360"
             column="64"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="                val uri = Uri.parse(r.uri)"
-        errorLine2="                          ~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/arjun/gander/MainActivity.kt"
-            line="489"
-            column="27"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)"
-        errorLine2="        ^">
-        <location
-            file="src/main/java/com/arjun/gander/Recents.kt"
-            line="59"
-            column="9"/>
     </issue>
 
     <issue

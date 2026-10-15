@@ -118,9 +118,11 @@ internal class SidebarAdapter(
             ContextCompat.getColor(context, folderColorRes(row.node.colorIndex))
         )
         view.findViewById<TextView>(R.id.sidebarTitle).text = row.node.name
-        view.findViewById<ImageView>(R.id.sidebarChevron).visibility = View.VISIBLE
-        view.findViewById<ImageView>(R.id.sidebarChevron).rotation =
-            if (row.expanded) 0f else -90f
+        // One lookup, two properties: the arrow is the same object in both states and only its
+        // angle changes, so asking for it twice was a cut-and-paste waiting to happen.
+        val chevron = view.findViewById<ImageView>(R.id.sidebarChevron)
+        chevron.visibility = View.VISIBLE
+        chevron.rotation = if (row.expanded) 0f else -90f
         view.contentDescription = row.node.name
         view.setOnClickListener { onFolder(row.node) }
         view.setOnLongClickListener { onFolderMenu(row.node); true }

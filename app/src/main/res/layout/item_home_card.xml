@@ -12,9 +12,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="@dimen/home_card_margin"
-    android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     android:orientation="vertical"
     android:paddingBottom="8dp">
 
@@ -27,7 +27,8 @@
             android:id="@+id/cardIcon"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:layout_gravity="center" />
+            android:layout_gravity="center"
+            android:importantForAccessibility="no" />
 
         <com.google.android.material.imageview.ShapeableImageView
             android:id="@+id/cardCover"

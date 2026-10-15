@@ -3,6 +3,7 @@ package com.arjun.gander
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import androidx.core.database.sqlite.transaction
 import org.json.JSONArray
 
 /**
@@ -129,8 +130,7 @@ internal class LibraryDb(private val app: Context) :
         val items = runCatching { JSONArray(raw) }.getOrNull() ?: return
         if (items.length() == 0) return
 
-        db.beginTransaction()
-        try {
+        db.transaction {
             for (i in 0 until items.length()) {
                 val item = runCatching { items.getJSONObject(i) }.getOrNull() ?: continue
                 val uri = item.optString("uri", "")
@@ -145,9 +145,6 @@ internal class LibraryDb(private val app: Context) :
                     SQLiteDatabase.CONFLICT_REPLACE
                 )
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
     }
 
