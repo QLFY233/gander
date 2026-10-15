@@ -17,6 +17,17 @@ import java.util.concurrent.Executor
  */
 class GanderApp : Application() {
 
+    /**
+     * The library index, one per process.
+     *
+     * It lives here rather than in the activity because a refresh is a property of the
+     * library, not of whichever screen asked for it: rotating the tablet recreates the
+     * activity, and a rescan running inside it would be thrown away with it. Nothing is
+     * opened until the first read, so a process that never shows the home screen never
+     * touches the database.
+     */
+    val library: Library by lazy { Library(this) }
+
     override fun onCreate() {
         super.onCreate()
         // A throwaway daemon thread rather than a pool: this runs once per process.

@@ -104,6 +104,23 @@ internal val ZIP_BADGE = "ZIP" to DIR_COLOR
  */
 internal val ADD_COLOR = 0xFFAF2D18.toInt()
 
+/** How many colours a folder can be drawn in. See §6.3 of the design. */
+internal const val FOLDER_COLOR_COUNT = 10
+
+/**
+ * Which of the ten folder colours a folder gets.
+ *
+ * The seed is the granted tree's URI for an imported folder, and the row's own database id
+ * for a made-up one. The id rather than the name, so that renaming a folder does not
+ * recolour it: a colour that moved would make the reader think they had the wrong folder.
+ *
+ * `String.hashCode` and not a digest, because it is specified by the language and so gives
+ * the same answer on every device and every build, which is the whole requirement. The
+ * modulo is `floorMod` so a negative hash cannot index outside the palette.
+ */
+internal fun folderColorIndex(seed: String): Int =
+    Math.floorMod(seed.hashCode(), FOLDER_COLOR_COUNT)
+
 /** The two or three letters, and the colour behind them, for a file. */
 internal fun badgeFor(name: String, mime: String?): Pair<String, Int> {
     val ext = name.substringAfterLast('.', "").lowercase()

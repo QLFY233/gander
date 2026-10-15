@@ -19,6 +19,12 @@
     <string name="recent_files">Recent files</string>
     <string name="folders">Folders</string>
     <string name="add_folder">Add a folder</string>
+    <!-- Where a picked file goes when the folder it came from cannot be worked out: a cloud
+         provider, or an app's own private directory. Files from one directory are filed
+         together under that directory's name; this is the name used when there is none. -->
+    <string name="imported_files">Imported files</string>
+    <!-- The display name of a granted tree whose provider would not say what it is called. -->
+    <string name="imported_folder_fallback">Imported folder</string>
     <string name="no_recents_hint">Files you open appear here for quick access.</string>
     <string name="no_folders_hint">Grant a folder to browse its files right here. Gander needs no storage permission to do it.</string>
     <string name="empty_folder">Nothing to show in this folder.</string>

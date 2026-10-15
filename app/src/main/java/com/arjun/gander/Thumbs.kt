@@ -71,7 +71,7 @@ object Thumbs {
         val onDisk = !ArchiveProvider.isEntry(appCtx, uri)
         executor.execute {
             val bmp = (if (onDisk) fromDisk(appCtx, key) else null)
-                ?: generate(appCtx, uri, kind, ext)?.also { if (onDisk) toDisk(appCtx, key, it) }
+                ?: generate(appCtx, uri, kind, ext, SIZE)?.also { if (onDisk) toDisk(appCtx, key, it) }
                 ?: return@execute
             mem.put(key, bmp)
             main.post {
@@ -118,23 +118,36 @@ object Thumbs {
         } ?: 0
     }.getOrDefault(0)
 
-    private fun generate(ctx: Context, uri: Uri, kind: FileKind, ext: String): Bitmap? =
+    private fun generate(ctx: Context, uri: Uri, kind: FileKind, ext: String, size: Int): Bitmap? =
         runCatching {
             when {
-                kind == FileKind.PDF -> pdfThumb(ctx, uri)
-                kind == FileKind.PLAYER -> videoThumb(ctx, uri)
-                else -> imageThumb(ctx, uri)
+                kind == FileKind.PDF -> pdfThumb(ctx, uri, size)
+                kind == FileKind.PLAYER -> videoThumb(ctx, uri, size)
+                else -> imageThumb(ctx, uri, size)
             }
         }.getOrNull()
 
-    private fun imageThumb(ctx: Context, uri: Uri): Bitmap? {
+    /**
+     * Draws a preview of [uri] at [size] on its long edge, for a caller that keeps the result
+     * somewhere of its own.
+     *
+     * The card covers in [Covers] draw at a much larger size than a list row does and cache
+     * under a different key in a different directory, so they cannot use [load]; they can use
+     * the drawing, which is the part that knows how to read a photo, a video's first frame and
+     * a PDF's first page. Null for anything that cannot be drawn, which is the answer this has
+     * always given.
+     */
+    internal fun render(ctx: Context, uri: Uri, kind: FileKind, ext: String, size: Int): Bitmap? =
+        generate(ctx, uri, kind, ext, size)
+
+    private fun imageThumb(ctx: Context, uri: Uri, size: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         ctx.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, bounds)
         }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
-        while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= SIZE) sample *= 2
+        while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= size) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         val bmp = ctx.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, opts)
@@ -145,12 +158,12 @@ object Thumbs {
         return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
     }
 
-    private fun videoThumb(ctx: Context, uri: Uri): Bitmap? {
+    private fun videoThumb(ctx: Context, uri: Uri, size: Int): Bitmap? {
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(ctx, uri)
             val frame = retriever.frameAtTime ?: return null
-            val scale = SIZE.toFloat() / maxOf(frame.width, frame.height)
+            val scale = size.toFloat() / maxOf(frame.width, frame.height)
             if (scale >= 1f) frame
             else Bitmap.createScaledBitmap(
                 frame, (frame.width * scale).toInt(), (frame.height * scale).toInt(), true
@@ -160,15 +173,15 @@ object Thumbs {
         }
     }
 
-    private fun pdfThumb(ctx: Context, uri: Uri): Bitmap? {
+    private fun pdfThumb(ctx: Context, uri: Uri, size: Int): Bitmap? {
         val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
         pfd.use {
             PdfRenderer(it).use { renderer ->
                 if (renderer.pageCount == 0) return null
                 renderer.openPage(0).use { page ->
-                    val height = (SIZE.toFloat() * page.height / page.width).toInt()
-                        .coerceIn(1, SIZE * 2)
-                    val bmp = Bitmap.createBitmap(SIZE, height, Bitmap.Config.ARGB_8888)
+                    val height = (size.toFloat() * page.height / page.width).toInt()
+                        .coerceIn(1, size * 2)
+                    val bmp = Bitmap.createBitmap(size, height, Bitmap.Config.ARGB_8888)
                     Canvas(bmp).drawColor(Color.WHITE)
                     page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     return bmp
