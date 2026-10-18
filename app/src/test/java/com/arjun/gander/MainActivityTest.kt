@@ -733,16 +733,20 @@ class MainActivityTest {
         val controller = home()
         controller.newFolder("Receipts")
         val receipts = library.nodes().first { it.name == "Receipts" }
-        controller.clickSection("Receipts")
+        // Only the first folder starts open, so a folder just made is folded: this is that case,
+        // and it is the one a new folder is dragged into.
         assertThat(Settings.sectionCollapsed(context, "node.${receipts.id}", true)).isTrue()
+        val before = controller.cardTitles().count { it == "mid.txt" }
 
         controller.get().dropCardOn(
-            controller.cardRow("zeta.txt"),
+            controller.cardRow("mid.txt"),
             controller.headingRow("Receipts")
         )
 
         assertThat(Settings.sectionCollapsed(context, "node.${receipts.id}", true)).isFalse()
-        assertThat(controller.cardTitles()).contains("zeta.txt")
+        // On screen rather than folded away under a heading that only counts it: the file is
+        // where it was, and one more card of that name is under the folder it was filed into.
+        assertThat(controller.cardTitles().count { it == "mid.txt" }).isEqualTo(before + 1)
     }
 
     /** The card row in the grid for the file titled [title]. */
