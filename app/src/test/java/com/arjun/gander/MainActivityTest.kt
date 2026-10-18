@@ -742,6 +742,8 @@ class MainActivityTest {
             controller.cardRow("mid.txt"),
             controller.headingRow("Receipts")
         )
+        // Every change to the library is drawn by a queued redraw, not by the call itself.
+        shadowOf(context.mainLooper).idle()
 
         assertThat(Settings.sectionCollapsed(context, "node.${receipts.id}", true)).isFalse()
         // On screen rather than folded away under a heading that only counts it: the file is
