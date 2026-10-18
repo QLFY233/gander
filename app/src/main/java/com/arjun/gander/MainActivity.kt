@@ -379,10 +379,17 @@ class MainActivity : AppCompatActivity() {
                 ItemTouchHelper.START or ItemTouchHelper.END,
             0
         ) {
+            /**
+             * The card being carried, so that it can be put down again: the end of a drag is
+             * reported without a view holder to put it down with.
+             */
+            private var lifted: View? = null
+
             /** Off for the whole grid: the long press belongs to the card's menu. */
             override fun isLongPressDragEnabled() = false
 
             override fun onMove(
+                recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
                 target: RecyclerView.ViewHolder
             ): Boolean {
@@ -392,19 +399,23 @@ class MainActivity : AppCompatActivity() {
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
 
+            /**
+             * Where a drag begins and where it ends, dropped on something or not.
+             *
+             * The card is lifted while it is carried, so that the one under the finger reads as
+             * the one moving rather than as one more card among those it passes over.
+             */
             override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
-                if (actionState != ItemTouchHelper.ACTION_STATE_DRAG) return
-                dragging = viewHolder?.let { homeAdapter.rowAt(it.bindingAdapterPosition) }
-                    as? HomeRow.Card
-                // Lifted, so the card under the finger reads as the one being carried rather
-                // than as one more card among the ones it is passing over.
-                viewHolder?.itemView?.elevation = resources.displayMetrics.density * LIFTED_DP
-            }
-
-            /** Where a drag ends, dropped on something or not. */
-            override fun clearView(viewHolder: RecyclerView.ViewHolder, actionState: Int) {
-                viewHolder.itemView.elevation = 0f
-                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) finishDrag()
+                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+                    dragging = viewHolder?.let { homeAdapter.rowAt(it.bindingAdapterPosition) }
+                        as? HomeRow.Card
+                    lifted = viewHolder?.itemView
+                    lifted?.elevation = resources.displayMetrics.density * LIFTED_DP
+                } else {
+                    lifted?.elevation = 0f
+                    lifted = null
+                    finishDrag()
+                }
             }
         }).also { it.attachToRecyclerView(contentList) }
     }
