@@ -128,6 +128,24 @@ class PortMessageTest {
     }
 
     // ---------------------------------------------------------------
+    // Inbound: the page has drawn its document
+    // ---------------------------------------------------------------
+
+    @Test
+    fun aDrawnMessageIsRead() {
+        assertThat(parsePortMessage("drawn")).isEqualTo(PortMessage.Drawn)
+    }
+
+    /** One exact word, and not a page report that happens to start with it. */
+    @Test
+    fun onlyTheExactWordIsDrawn() {
+        assertThat(parsePortMessage("Drawn")).isNull()
+        assertThat(parsePortMessage("drawn ")).isNull()
+        assertThat(parsePortMessage(" drawn")).isNull()
+        assertThat(parsePortMessage("drawn 1 1")).isNull()
+        assertThat(parsePortMessage("draw")).isNull()
+    }
+    // ---------------------------------------------------------------
     // Inbound: the presentation
     // ---------------------------------------------------------------
 

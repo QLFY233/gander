@@ -145,7 +145,7 @@ internal class HomeAdapter(
         when {
             // Nothing this kind can ever have a cover from, or one that has already failed to
             // draw once. A cover is tried once per file and not once per scroll: an encrypted
-            // PDF fails every time. A Word document is in neither group — it has a cover as
+            // PDF fails every time. An Office document is in neither group — it has a cover as
             // soon as the reader has opened it, which is when the viewer photographs the page
             // it has drawn, and load() says UNSUPPORTED until then.
             !Covers.covered(kind, ref.ext) -> Unit

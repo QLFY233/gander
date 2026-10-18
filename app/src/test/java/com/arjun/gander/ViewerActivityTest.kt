@@ -265,8 +265,30 @@ class ViewerActivityTest {
     }
 
     /**
-     * One photograph per visit, however often the page reports where it is: it says which page
-     * it is on whenever that changes, so scrolling back to the top would file a second one.
+     * A spreadsheet and a presentation are photographed the same way: their pages say their
+     * first screen is drawn, and the app does not care which of the three it was looking at.
+     */
+    @Test
+    fun theOtherOfficeFormatsHandTheirCoversOverToo() {
+        listOf("budget.xlsx", "deck.pptx").forEach { name ->
+            val uri = FixtureProvider.uriFor(name)
+            val library = (context as GanderApp).library
+            library.importPicked(listOf(uri))
+            val controller = open(name)
+            controller.get().pageShot = { Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888) }
+
+            controller.get().captureCover(controller.webView()!!, uri)
+
+            val ref = library.refFor(uri)!!
+            assertThat(ref.coverState).isEqualTo(Covers.READY)
+            assertThat(File(context.filesDir, "covers/${ref.coverKey}.png").exists()).isTrue()
+            controller.pause().stop().destroy()
+        }
+    }
+
+    /**
+     * One photograph per visit, however often the page says it is drawn: a search redraws the
+     * page, and says so again.
      */
     @Test
     fun aWordDocumentIsPhotographedOnce() {

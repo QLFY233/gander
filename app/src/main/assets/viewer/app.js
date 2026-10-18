@@ -17,10 +17,36 @@ function vwStatus(msg) {
   el.style.display = "";
 }
 
+/* Whether the document has been drawn: see vwStatusDone. */
+var vwDrawn = false;
+
 function vwStatusDone() {
   var el = document.getElementById("vw-status");
   if (el) el.style.display = "none";
+  vwDrawn = true;
+  vwSayDrawn();
 }
+
+/*
+ * Says the document is drawn, and that there is something on screen to look at.
+ *
+ * ViewerActivity photographs that first screen for the card in the home screen, because an
+ * Office document is rendered here and nowhere else: see captureCover. The channel belongs to
+ * find.js, which every page that would be asked for a cover loads; a page without one, or a
+ * WebView too old to carry a port, says nothing, which is the right answer.
+ *
+ * Said again when the channel turns up, because the app hands one over when the page has
+ * finished loading and a small document can be drawn before that. That listener is not the one
+ * find.js takes the port on, so the repeat waits a turn of its own for it to be taken.
+ */
+function vwSayDrawn() {
+  if (vwDrawn && window.vwFind && vwFind.post) vwFind.post("drawn");
+}
+
+window.addEventListener("message", function (e) {
+  if (!e.ports || !e.ports.length) return;
+  setTimeout(vwSayDrawn, 0);
+});
 
 function vwError(title, detail) {
   var el = document.getElementById("vw-status");

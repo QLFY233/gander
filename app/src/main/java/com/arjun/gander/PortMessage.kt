@@ -85,6 +85,16 @@ internal sealed interface PortMessage {
     data object Locked : PortMessage
 
     /**
+     * The page has drawn its document, and there is something on screen to look at.
+     *
+     * Sent by the pages whose first screen is worth keeping as the card's cover, because
+     * rendering one of those documents again off-screen is seconds of work: a Word
+     * document, a spreadsheet, a presentation. It says nothing about which part is under the
+     * middle of the screen — that is [Page], and only a paged document reports it.
+     */
+    data object Drawn : PortMessage
+
+    /**
      * The presentation is up or down, and whether the page on screen is wider than it is
      * tall.
      *
@@ -105,7 +115,12 @@ internal sealed interface PortMessage {
  * silently.
  */
 internal fun parsePortMessage(data: String?): PortMessage? {
-    if (data == "locked") return PortMessage.Locked
+    // The two that are one bare word rather than three fields. Exact, so nothing a page
+    // sends by accident reads as either.
+    when (data) {
+        "locked" -> return PortMessage.Locked
+        "drawn" -> return PortMessage.Drawn
+    }
     val said = data?.split(" ") ?: return null
     if (said.size != 3) return null
 

@@ -52,9 +52,9 @@ internal object Covers {
     const val FAILED = 2
 
     /**
-     * Nothing to show and nothing to draw: audio, zips, and the Office formats. A Word
-     * document reports this until the reader has opened it once, since the viewer is the only
-     * place one is ever rendered and its cover is a photograph of that.
+     * Nothing to show and nothing to draw: audio, zips, and the Office formats before they
+     * have been opened once. A document reports this until the reader has opened it, since the
+     * viewer is the only place one is ever rendered and its cover is a photograph of that.
      */
     const val UNSUPPORTED = 3
 
@@ -108,12 +108,25 @@ internal object Covers {
     }
 
     /**
+     * Whether the viewer is where this kind's cover is drawn, because nowhere else can.
+     *
+     * The Office formats are rendered by their own pages in a WebView, and by nothing here:
+     * a cover is a photograph of the first screen the reader saw, taken once and filed. See
+     * §5.4 of the design.
+     */
+    fun filedByViewer(kind: FileKind): Boolean = when (kind) {
+        FileKind.DOCX, FileKind.XLSX, FileKind.PPTX -> true
+        FileKind.IMAGE, FileKind.IMAGE_WEB, FileKind.PDF, FileKind.PLAYER, FileKind.PROSE,
+        FileKind.MD, FileKind.TEXT, FileKind.MODEL, FileKind.ARCHIVE, FileKind.UNSUPPORTED ->
+            false
+    }
+
+    /**
      * Whether a cover for this kind can exist at all: one drawn here from the file, or one the
-     * viewer filed after the reader opened it. A Word document is the second sort, and is the
-     * only one — the viewer is the only place one is ever rendered.
+     * viewer filed after the reader opened it.
      */
     fun covered(kind: FileKind, ext: String): Boolean =
-        supported(kind, ext) || kind == FileKind.DOCX
+        supported(kind, ext) || filedByViewer(kind)
 
     /**
      * Draws the cover of [ref] into [into], hiding [badge] when it arrives.
@@ -140,7 +153,7 @@ internal object Covers {
         }
 
         // Two ways a cover comes about: drawn here from the file, or filed by the viewer, which
-        // is the only place a Word document is ever rendered. See §5.4 of the design.
+        // is the only place an Office document is ever rendered. See §5.4 of the design.
         if (!covered(kind, ref.ext)) {
             onState(UNSUPPORTED)
             return
@@ -173,7 +186,7 @@ internal object Covers {
     /**
      * Files a cover that was drawn somewhere else, and says what it is filed under.
      *
-     * The viewer is the only caller. A Word document is rendered by a page in a WebView, and
+     * The viewer is the only caller. An Office document is rendered by a page in a WebView, and
      * drawing one again off-screen for a card that scrolled past would stall a tablet for
      * seconds at a time, so the viewer photographs the page it has already put on screen and
      * hands it here. From this point it is a cover like any other: scaled to [LONG_EDGE],

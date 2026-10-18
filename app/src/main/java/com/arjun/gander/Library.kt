@@ -208,11 +208,11 @@ internal class Library(private val app: Context) {
     /**
      * Files a cover the viewer drew of a document it had open.
      *
-     * A Word document is the one format Gander renders but cannot cheaply draw a card for: it
-     * is a page in the viewer's WebView, and rendering one off-screen for a card that scrolled
-     * past would stall a tablet for seconds at a time. So the viewer photographs the page it
-     * has already drawn and hands it here, and this is where it becomes a cover — on the thread
-     * that owns the index, and only if the file is one of ours and has no cover yet.
+     * An Office document is the sort Gander renders but cannot cheaply draw a card for: it is a
+     * page in the viewer's WebView, and rendering one off-screen for a card that scrolled past
+     * would stall a tablet for seconds at a time. So the viewer photographs the page it has
+     * already drawn and hands it here, and this is where it becomes a cover — on the thread that
+     * owns the index, and only if the file is one of ours and has no cover yet.
      */
     fun fileCover(uri: Uri, drawn: Bitmap) {
         io.execute {

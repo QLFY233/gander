@@ -1449,9 +1449,11 @@ open class ViewerActivity : AppCompatActivity() {
                             pageTotal = said.of
                             setPageIndicatorText()
                             showPageIndicator()
-                            // The first page of a Word document is on screen, which is the
-                            // only moment one is ever rendered. See captureCover.
-                            if (kind == FileKind.DOCX && said.n == 1) captureCover(web, uri)
+                        }
+                        // The page has its document on screen, which is the only moment one
+                        // of these is ever rendered. See captureCover.
+                        PortMessage.Drawn -> if (Covers.filedByViewer(kind)) {
+                            captureCover(web, uri)
                         }
                         is PortMessage.SearchCount ->
                             onSearchCount?.invoke(said.at, said.total, said.done)
@@ -1493,15 +1495,15 @@ open class ViewerActivity : AppCompatActivity() {
     /**
      * Takes a picture of the page that has just been drawn, for the card on the home screen.
      *
-     * A Word document is the one format Gander can render but not cheaply. There is no local
+     * The Office formats are the ones Gander can render but not cheaply. There is no local
      * Office renderer to call, so a cover has to come from a page in a WebView — and rendering
      * one off-screen, for a card that scrolled past, would stall a tablet for seconds at a
      * time. The viewer has already paid that cost by the time this runs, which is why the
      * cover is a photograph of what it drew and why it exists only after the reader has
      * opened the document once.
      *
-     * Once per screen, and not once per report: the page says which page it is on whenever
-     * that changes, so scrolling back to the top would otherwise file the same cover again.
+     * Once per screen: the page says its document is drawn once, but a page is free to say so
+     * again — a search that redraws it, say — and one photograph is all a cover needs.
      *
      * Internal rather than private so a test can take the photograph without a page that runs:
      * Robolectric's WebView is a shadow, so the report this answers to cannot be delivered.

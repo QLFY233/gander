@@ -185,3 +185,14 @@ def test_the_runs_are_still_lowered_and_raised(viewer, page):
     assert page.evaluate("() => document.querySelector('#container sub').textContent") \
         .startswith("3")
     assert page.evaluate("() => document.querySelector('#container sup sup').textContent") == "1"
+
+
+def test_the_page_says_when_it_has_drawn_the_document(viewer, page, port):
+    """
+    One page or six, the viewer photographs the first screen for the card in the home screen,
+    and this is how it hears that there is one: see captureCover. A document of one page says
+    it too, which is why this is not the page counter's news.
+    """
+    viewer("docx.html", "report.docx")
+    wait_until_done(page)
+    assert port().wait_for("drawn") == "drawn"

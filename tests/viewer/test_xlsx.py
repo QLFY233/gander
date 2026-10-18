@@ -243,3 +243,16 @@ def test_an_engine_too_old_to_search_the_page_itself_gets_every_row_on_it(viewer
     assert page.evaluate("() => !(window.CSS && CSS.highlights)")
     page.wait_for_function(ROW_DRAWN, arg=BIG, timeout=30000)
     assert page.evaluate("() => window.scrollY") == 0
+
+
+def test_the_page_says_when_it_has_drawn_the_workbook(viewer, page, port):
+    """
+    ViewerActivity photographs that first screen for the card in the home screen, because a
+    spreadsheet is rendered here and nowhere else: see captureCover.
+
+    The app opens the channel when the page has finished loading, which a small workbook can
+    beat, so the page says this again when the channel turns up. Here it always turns up late.
+    """
+    viewer("xlsx.html", "budget.xlsx")
+    wait_until_done(page)
+    assert port().wait_for("drawn") == "drawn"

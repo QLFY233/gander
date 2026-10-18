@@ -686,3 +686,13 @@ def test_a_deck_drawn_whole_has_no_box(viewer, page, name):
     if name == "charted.pptx":
         assert page.query_selector("#result [id^='chart'] svg") is not None
     assert missing(page) == []
+
+
+def test_the_page_says_when_it_has_drawn_the_deck(viewer, page, port):
+    """
+    The slides are up and the spinner is gone, which is the moment ViewerActivity photographs
+    the first screen for the card in the home screen: see captureCover.
+    """
+    viewer("pptx.html", "deck.pptx")
+    wait_until_done(page)
+    assert port().wait_for("drawn") == "drawn"

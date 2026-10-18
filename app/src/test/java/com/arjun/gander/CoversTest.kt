@@ -93,14 +93,30 @@ class CoversTest {
         assertThat(Covers.supported(FileKind.XLSX, "xlsx")).isFalse()
         assertThat(Covers.supported(FileKind.PPTX, "pptx")).isFalse()
         assertThat(Covers.supported(FileKind.ARCHIVE, "zip")).isFalse()
-        // None of them can be drawn here, and only one of them can end up with a cover anyway:
-        // the viewer photographs a Word document's page when the reader opens it.
+        // None of them can be drawn here, and only the Office ones can end up with a cover
+        // anyway: the viewer photographs the page when the reader opens the document.
         assertThat(Covers.covered(FileKind.DOCX, "docx")).isTrue()
-        assertThat(Covers.covered(FileKind.XLSX, "xlsx")).isFalse()
-        assertThat(Covers.covered(FileKind.PPTX, "pptx")).isFalse()
+        assertThat(Covers.covered(FileKind.XLSX, "xlsx")).isTrue()
+        assertThat(Covers.covered(FileKind.PPTX, "pptx")).isTrue()
         assertThat(Covers.covered(FileKind.ARCHIVE, "zip")).isFalse()
         assertThat(Covers.covered(FileKind.PLAYER, "mp3")).isFalse()
         assertThat(Covers.covered(FileKind.PDF, "pdf")).isTrue()
+    }
+
+    /**
+     * The three whose cover is a photograph of the viewer's page, and nothing else. A prose
+     * document is not one of them: it is a page too, but a reflowed one with no shape to show.
+     */
+    @Test
+    fun onlyTheOfficeFormatsArePhotographed() {
+        listOf(FileKind.DOCX, FileKind.XLSX, FileKind.PPTX).forEach {
+            assertThat(Covers.filedByViewer(it)).isTrue()
+        }
+        FileKind.entries.filterNot {
+            it == FileKind.DOCX || it == FileKind.XLSX || it == FileKind.PPTX
+        }.forEach {
+            assertThat(Covers.filedByViewer(it)).isFalse()
+        }
     }
 
     @Test
@@ -114,7 +130,7 @@ class CoversTest {
     }
 
     // ---------------------------------------------------------------
-    // Word documents, whose cover is a photograph of the viewer's page
+    // Office documents, whose cover is a photograph of the viewer's page
     // ---------------------------------------------------------------
 
     /**
@@ -147,6 +163,21 @@ class CoversTest {
         assertThat(maxOf(shown.width, shown.height)).isEqualTo(512)
         assertThat(shown.width).isEqualTo(384)
         assertThat(File(context.filesDir, "covers/${Covers.key(ref)}.png").exists()).isTrue()
+    }
+
+    /** A spreadsheet and a presentation are photographed the same way, and kept the same way. */
+    @Test
+    fun theOtherOfficeFormatsShowTheCoverTheViewerFiled() {
+        listOf("budget.xlsx", "deck.pptx").forEach { name ->
+            val ref = ref(uri = "content://test.fixtures/$name", name = name)
+            Covers.store(context, ref, Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888))
+
+            val states = mutableListOf<Int>()
+            loadAndWait(ref, states)
+
+            assertThat(states).containsExactly(Covers.READY)
+            assertThat(File(context.filesDir, "covers/${Covers.key(ref)}.png").exists()).isTrue()
+        }
     }
 
     /** A page photographed smaller than the ceiling is kept as it is rather than stretched. */
