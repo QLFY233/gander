@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
@@ -131,10 +132,18 @@ class MainActivity : AppCompatActivity() {
     /** Folders whose over-large import has already been mentioned, so it is said once. */
     private val truncationMentioned = mutableSetOf<Long>()
 
-    /** The grid's drag, and the card it is carrying and the heading it is over, while it lasts. */
+    /** The grid's drag, and the card it is carrying, while it lasts. */
     private var dragHelper: ItemTouchHelper? = null
     private var dragging: HomeRow.Card? = null
-    private var dropRow: Int? = null
+
+    /**
+     * Where letting go would file the card: the folder whose row is outlined, and that row.
+     *
+     * The row is kept rather than its position because a drop may be on either column, and a
+     * sidebar row is not a position in the grid.
+     */
+    private var dropNode: LibraryNode? = null
+    private var dropView: View? = null
 
     private val homeAdapter = HomeAdapter(
         onOpen = { ref -> openInViewer(ref.uri.toUri()) },
@@ -393,7 +402,12 @@ class MainActivity : AppCompatActivity() {
                 viewHolder: RecyclerView.ViewHolder,
                 target: RecyclerView.ViewHolder
             ): Boolean {
-                markDropTarget(target.bindingAdapterPosition)
+                val from = dragging?.nodeId ?: return false
+                val at = target.bindingAdapterPosition
+                showDrop(
+                    dropTargetFor(homeAdapter.rowAt(at), from),
+                    contentList.findViewHolderForAdapterPosition(at)?.itemView
+                )
                 return false
             }
 
@@ -420,16 +434,19 @@ class MainActivity : AppCompatActivity() {
         }).also { it.attachToRecyclerView(contentList) }
     }
 
-    /** Lights up the heading under a drag, if what is being carried may be dropped there. */
-    private fun markDropTarget(position: Int) {
-        val from = dragging?.nodeId ?: return
-        if (dropTargetFor(homeAdapter.rowAt(position), from) == null) return clearDropTarget()
-        if (dropRow == position) return
-        clearDropTarget()
-        val view = contentList.findViewHolderForAdapterPosition(position)?.itemView ?: return
-        dropRow = position
-        // An outline rather than a fill: the heading stays readable while it is saying it will
-        // take the card, and the colourful thing under it is the folder's own icon.
+    /**
+     * Lights up the row a drag is over, if a card may be let go of there, and remembers the
+     * folder as where it would go.
+     *
+     * An outline rather than a fill: the row stays readable while it is saying it will take the
+     * card, and the colourful thing under it is the folder's own icon.
+     */
+    private fun showDrop(node: LibraryNode?, view: View?) {
+        if (node == null || view == null) return clearDrop()
+        if (dropNode?.id == node.id && dropView === view) return
+        clearDrop()
+        dropNode = node
+        dropView = view
         view.background = GradientDrawable().apply {
             setStroke(
                 (resources.displayMetrics.density * DROP_OUTLINE_DP).toInt(),
@@ -439,33 +456,83 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearDropTarget() {
-        val at = dropRow ?: return
-        dropRow = null
-        contentList.findViewHolderForAdapterPosition(at)?.itemView?.background = null
+    /** Puts the outline away, and forgets where a drop would file a card. */
+    private fun clearDrop() {
+        dropView?.background = null
+        dropView = null
+        dropNode = null
+    }
+
+    /**
+     * Follows a drag over the whole window, not just over the content column.
+     *
+     * The grid's touch helper only ever sees rows of its own list, so a card carried over to a
+     * folder in the sidebar would have nowhere to be dropped. Every event of the window passes
+     * through here, drag or not, which makes this the one place where both columns can be asked
+     * about the same point. It is asked afterwards, so that the column the finger is actually
+     * over is the one that shows.
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val handled = super.dispatchTouchEvent(event)
+        if (dragging != null && event.actionMasked == MotionEvent.ACTION_MOVE) {
+            markSidebarDrop(event.rawX, event.rawY)
+        }
+        return handled
+    }
+
+    /**
+     * Makes the folder row under the finger the drop target, if the finger is over one.
+     *
+     * A point that is not over the sidebar is left to the grid's own helper rather than cleared
+     * here: both are asked about the same event, and clearing would undo what the other just
+     * said.
+     */
+    private fun markSidebarDrop(x: Float, y: Float) {
+        val from = dragging?.nodeId ?: return
+        // A closed sidebar is still there, at no width: a row nobody can see should not be
+        // somewhere a card disappears into.
+        if (!sidebarOpen || sidebar.visibility != View.VISIBLE) return
+        val at = IntArray(2)
+        sidebarList.getLocationOnScreen(at)
+        val right = at[0] + sidebarList.width
+        val bottom = at[1] + sidebarList.height
+        if (x < at[0] || y < at[1] || x >= right || y >= bottom) return
+        val view = sidebarList.findChildViewUnder(x - at[0], y - at[1])
+        val position = view?.let { sidebarList.getChildAdapterPosition(it) } ?: -1
+        showDrop(
+            if (position < 0) null else dropTargetFor(sidebarAdapter.rowAt(position), from),
+            view
+        )
     }
 
     /** Files what was being dragged where it was dropped, if it was over anywhere. */
     private fun finishDrag() {
         val card = dragging
-        val at = dropRow
+        val node = dropNode
         dragging = null
-        clearDropTarget()
-        if (card == null || at == null) return
-        dropCardOn(card, at)
+        clearDrop()
+        if (card != null && node != null) fileInto(card.ref, node)
     }
 
     /**
-     * Files [card] under the folder whose heading is at [position], if that row is somewhere a
-     * card may be dropped.
+     * Files [card] under the folder whose heading is at [position], if that row is a place a
+     * card may be dropped, as letting go over it does.
      *
      * Split out of the touch handling that calls it so that a test can say where a card was let
      * go of without staging a drag: a drag needs a laid-out grid and a finger that keeps moving,
-     * and Robolectric gives it neither.
+     * and Robolectric gives it neither. Which row is under the finger is the same kind of
+     * question, so the sidebar's half has a way in of its own.
      */
     @androidx.annotation.VisibleForTesting
     internal fun dropCardOn(card: HomeRow.Card, position: Int) {
         val node = dropTargetFor(homeAdapter.rowAt(position), card.nodeId) ?: return
+        fileInto(card.ref, node)
+    }
+
+    /** The sidebar's half of [dropCardOn], for a row in that column. */
+    @androidx.annotation.VisibleForTesting
+    internal fun dropCardOn(card: HomeRow.Card, row: SidebarRow) {
+        val node = dropTargetFor(row, card.nodeId) ?: return
         fileInto(card.ref, node)
     }
 
@@ -477,6 +544,9 @@ class MainActivity : AppCompatActivity() {
      * heading may be scrolled far from where the card landed.
      */
     private fun fileInto(ref: LibraryRef, node: LibraryNode) {
+        // A card filed into a folded folder would go into a heading that then says nothing
+        // about where it went, so the folder is left open, whichever column it was dropped on.
+        Settings.setSectionCollapsed(this, sectionKey(node.id), false)
         mutate { library.moveRef(ref.id, node.id) }
         Snackbar.make(
             contentList,

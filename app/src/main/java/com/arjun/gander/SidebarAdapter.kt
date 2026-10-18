@@ -51,6 +51,9 @@ internal class SidebarAdapter(
 
     private val rows = mutableListOf<SidebarRow>()
 
+    /** The row at [position], for the drag asking which folder is under the finger. */
+    fun rowAt(position: Int): SidebarRow? = rows.getOrNull(position)
+
     /**
      * Replaces the rows, as [HomeAdapter.submit] does: the same positions holding different
      * things, rather than a structure that changed.

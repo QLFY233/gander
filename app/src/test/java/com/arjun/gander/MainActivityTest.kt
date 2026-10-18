@@ -680,6 +680,71 @@ class MainActivityTest {
         assertThat(latestDialog()!!.titles()).contains(context.getString(R.string.move_to))
     }
 
+    /**
+     * A card let go of over a folder's row in the sidebar is filed there too.
+     *
+     * The sidebar is the other column's way to say the same thing: its rows are the same
+     * folders, and a finger that has carried a card across the window should not have to come
+     * back for the heading.
+     */
+    @Test
+    fun aCardLetGoOverAFolderInTheSidebarIsFiledThere() {
+        imported()
+        val controller = home()
+        controller.newFolder("Receipts")
+        val receipts = library.nodes().first { it.name == "Receipts" }
+
+        controller.get().dropCardOn(
+            controller.cardRow("zeta.txt"),
+            SidebarRow.Folder(receipts, expanded = false)
+        )
+
+        assertThat(library.refsFor(receipts).map { it.name }).containsExactly("zeta.txt")
+    }
+
+    /** A file row in the sidebar is a file, and a file is not somewhere to put another one. */
+    @Test
+    fun aFileRowInTheSidebarIsNotSomewhereToFileACard() {
+        imported()
+        val controller = home()
+        controller.newFolder("Receipts")
+        val receipts = library.nodes().first { it.name == "Receipts" }
+        val documents = library.nodes().first { it.name == "Documents" }
+        val before = library.refsFor(documents).size
+
+        controller.get().dropCardOn(
+            controller.cardRow("zeta.txt"),
+            SidebarRow.File("content://elsewhere/1", "zeta.txt", "txt", "text/plain")
+        )
+
+        assertThat(library.refsFor(documents).size).isEqualTo(before)
+        assertThat(library.refsFor(receipts)).isEmpty()
+    }
+
+    /**
+     * A card filed into a folded folder opens it.
+     *
+     * Otherwise the card is dropped onto a heading that then says nothing about where it went,
+     * and the reader is left looking at the folder they were already looking at.
+     */
+    @Test
+    fun filingIntoAFoldedFolderOpensIt() {
+        imported()
+        val controller = home()
+        controller.newFolder("Receipts")
+        val receipts = library.nodes().first { it.name == "Receipts" }
+        controller.clickSection("Receipts")
+        assertThat(Settings.sectionCollapsed(context, "node.${receipts.id}", true)).isTrue()
+
+        controller.get().dropCardOn(
+            controller.cardRow("zeta.txt"),
+            controller.headingRow("Receipts")
+        )
+
+        assertThat(Settings.sectionCollapsed(context, "node.${receipts.id}", true)).isFalse()
+        assertThat(controller.cardTitles()).contains("zeta.txt")
+    }
+
     /** The card row in the grid for the file titled [title]. */
     private fun ActivityController<MainActivity>.cardRow(title: String): HomeRow.Card {
         val adapter = grid().adapter as HomeAdapter
