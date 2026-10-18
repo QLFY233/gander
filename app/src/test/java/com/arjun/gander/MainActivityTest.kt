@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -656,87 +654,64 @@ class MainActivityTest {
         answer(AlertDialog.BUTTON_POSITIVE)
     }
 
-    /** The row for [text] under [id], as it is on screen: only a laid-out row can be dragged onto. */
-    private fun ActivityController<MainActivity>.onScreen(id: Int, text: String): View? {
-        val list = grid()
-        return (0 until list.adapter!!.itemCount).firstNotNullOfOrNull { position ->
-            list.findViewHolderForAdapterPosition(position)?.itemView
-                ?.takeIf { it.findViewById<TextView>(id)?.text?.toString() == text }
-        }
-    }
-
     /**
-     * Drags a card's grip onto another row, in the grid's own coordinates, the way a finger
-     * would: down on the grip, across to the row, up.
-     *
-     * The grid keeps its rows where they are — what a drag chooses is a folder, not a place
-     * among its files — so this is the whole of the gesture, not a reorder and a drop. [lands]
-     * is whether [onto] is somewhere the card may be put, which is what the heading says by
-     * drawing an outline while it is over it.
-     */
-    private fun ActivityController<MainActivity>.dragGrip(
-        card: View,
-        onto: View,
-        lands: Boolean = true
-    ) {
-        val list = grid()
-        val grip = card.findViewById<View>(R.id.cardGrip)
-        val at = IntArray(2)
-        val from = IntArray(2)
-        grip.getLocationInWindow(at)
-        list.getLocationInWindow(from)
-        val downX = at[0] - from[0] + grip.width / 2f
-        val downY = at[1] - from[1] + grip.height / 2f
-        onto.getLocationInWindow(at)
-        val toX = at[0] - from[0] + onto.width / 2f
-        val toY = at[1] - from[1] + onto.height / 2f
-
-        val now = SystemClock.uptimeMillis()
-        list.dispatchTouchEvent(
-            MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, downX, downY, 0)
-        )
-        // Across in a few steps, as a finger goes, so the touch helper is asked about the rows
-        // on the way rather than only once the finger has arrived.
-        for (step in 1..STEPS) {
-            val part = step.toFloat() / STEPS
-            list.dispatchTouchEvent(
-                MotionEvent.obtain(
-                    now, now + step,
-                    MotionEvent.ACTION_MOVE,
-                    downX + (toX - downX) * part,
-                    downY + (toY - downY) * part,
-                    0
-                )
-            )
-        }
-        shadowOf(context.mainLooper).idle()
-
-        if (lands) assertThat(onto.background).isNotNull() else assertThat(onto.background).isNull()
-
-        list.dispatchTouchEvent(
-            MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, toX, toY, 0)
-        )
-        shadowOf(context.mainLooper).idle()
-        // Landed or let go, the heading is a heading again.
-        assertThat(onto.background).isNull()
-    }
-
-    /**
-     * A card dragged by the grip in its corner onto another folder's heading is filed there.
-     *
-     * The same move the card's menu offers under "Move to…", in one gesture, and the reason the
-     * grip exists at all: the long press is the menu, and taking that away for a drag would cost
-     * the file actions.
+     * A card is dragged by a grip of its own, because the long press is its menu.
      */
     @Test
-    fun aCardDraggedByItsGripIsFiledUnderAnotherFoldersHeading() {
+    fun aCardHasTheGripItsDragStartsFrom() {
+        imported()
+        val controller = home()
+        val list = controller.grid()
+        val adapter = list.adapter as HomeAdapter
+        val position = (0 until adapter.itemCount).first { adapter.rowAt(it) is HomeRow.Card }
+        val holder = adapter.createViewHolder(list, adapter.getItemViewType(position))
+        adapter.bindViewHolder(holder, position)
+
+        val grip = holder.itemView.findViewById<View>(R.id.cardGrip)
+        assertThat(grip.visibility).isEqualTo(View.VISIBLE)
+        // Hidden from accessibility: a drag is not something a screen reader can do, and the
+        // same move is in the card's menu.
+        assertThat(grip.importantForAccessibility)
+            .isEqualTo(View.IMPORTANT_FOR_ACCESSIBILITY_NO)
+
+        // And the long press is still the menu, which is why the drag has a handle at all.
+        holder.itemView.performLongClick()
+        shadowOf(context.mainLooper).idle()
+        assertThat(latestDialog()!!.titles()).contains(context.getString(R.string.move_to))
+    }
+
+    /** The card row in the grid for the file titled [title]. */
+    private fun ActivityController<MainActivity>.cardRow(title: String): HomeRow.Card {
+        val adapter = grid().adapter as HomeAdapter
+        return (0 until adapter.itemCount).mapNotNull { adapter.rowAt(it) as? HomeRow.Card }
+            .first { it.ref.name == title }
+    }
+
+    /** The row of the heading for the folder called [name]. */
+    private fun ActivityController<MainActivity>.headingRow(name: String): Int {
+        val adapter = grid().adapter as HomeAdapter
+        return (0 until adapter.itemCount).first {
+            (adapter.rowAt(it) as? HomeRow.Section)?.node?.name == name
+        }
+    }
+
+    /**
+     * A card let go of over another folder's heading is filed there.
+     *
+     * The drop itself, which is the half of the drag worth asking about: the other half is a
+     * finger moving over a laid-out grid, which Robolectric cannot stage. The rows come from the
+     * adapter rather than from the views, so this needs no layout either.
+     */
+    @Test
+    fun aCardLetGoOverAnotherFoldersHeadingIsFiledThere() {
         imported()
         val controller = home()
         controller.newFolder("Receipts")
-        val card = controller.onScreen(R.id.cardTitle, "zeta.txt")!!
-        val heading = controller.onScreen(R.id.sectionTitle, "Receipts")!!
 
-        controller.dragGrip(card, heading)
+        controller.get().dropCardOn(
+            controller.cardRow("zeta.txt"),
+            controller.headingRow("Receipts")
+        )
 
         val receipts = library.nodes().first { it.name == "Receipts" }
         assertThat(library.refsFor(receipts).map { it.name }).containsExactly("zeta.txt")
@@ -747,15 +722,16 @@ class MainActivityTest {
 
     /** The heading of the folder the card came out of is not somewhere to put it. */
     @Test
-    fun aCardDroppedOnItsOwnFoldersHeadingGoesNowhere() {
+    fun aCardLetGoOverItsOwnFoldersHeadingGoesNowhere() {
         imported()
         val controller = home()
-        val card = controller.onScreen(R.id.cardTitle, "zeta.txt")!!
-        val heading = controller.onScreen(R.id.sectionTitle, "Documents")!!
         val documents = library.nodes().first { it.name == "Documents" }
         val before = library.refsFor(documents).size
 
-        controller.dragGrip(card, heading, lands = false)
+        controller.get().dropCardOn(
+            controller.cardRow("zeta.txt"),
+            controller.headingRow("Documents")
+        )
 
         assertThat(library.refsFor(documents).size).isEqualTo(before)
     }
@@ -1066,8 +1042,4 @@ class MainActivityTest {
         assertThat(controller.toolbar().menu.findItem(R.id.action_about).isVisible).isTrue()
     }
 
-    private companion object {
-        /** How many moves a drag is taken across in: enough to pass over a row, not a frame. */
-        const val STEPS = 6
-    }
 }

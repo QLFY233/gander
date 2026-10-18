@@ -452,7 +452,20 @@ class MainActivity : AppCompatActivity() {
         dragging = null
         clearDropTarget()
         if (card == null || at == null) return
-        val node = dropTargetFor(homeAdapter.rowAt(at), card.nodeId) ?: return
+        dropCardOn(card, at)
+    }
+
+    /**
+     * Files [card] under the folder whose heading is at [position], if that row is somewhere a
+     * card may be dropped.
+     *
+     * Split out of the touch handling that calls it so that a test can say where a card was let
+     * go of without staging a drag: a drag needs a laid-out grid and a finger that keeps moving,
+     * and Robolectric gives it neither.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal fun dropCardOn(card: HomeRow.Card, position: Int) {
+        val node = dropTargetFor(homeAdapter.rowAt(position), card.nodeId) ?: return
         fileInto(card.ref, node)
     }
 
