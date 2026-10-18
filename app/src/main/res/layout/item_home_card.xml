@@ -37,6 +37,20 @@
             android:scaleType="centerCrop"
             android:visibility="gone"
             app:shapeAppearanceOverlay="@style/ShapeAppearance.Gander.Thumb" />
+
+        <!-- The handle a card is dragged by, onto another folder's heading. It is not a button
+             and not a menu: the card's own long press is the menu, and this is the one thing
+             that has to be held before it moves. Hidden from accessibility for the same reason:
+             a drag is not something a screen reader can do, and the menu already offers the
+             same move. -->
+        <ImageView
+            android:id="@+id/cardGrip"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="end|bottom"
+            android:layout_margin="6dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/card_grip" />
     </com.arjun.gander.CardCover>
 
     <TextView

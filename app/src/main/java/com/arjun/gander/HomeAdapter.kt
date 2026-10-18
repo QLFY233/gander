@@ -1,8 +1,10 @@
 package com.arjun.gander
 
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.text.format.Formatter
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -24,11 +26,32 @@ internal sealed interface HomeRow {
     /** A folder's heading, with how many files are in it. Full span. */
     data class Section(val node: LibraryNode, val count: Int, val collapsed: Boolean) : HomeRow
 
-    /** One file. One cell of the grid. */
-    data class Card(val ref: LibraryRef) : HomeRow
+    /**
+     * One file. One cell of the grid.
+     *
+     * [nodeId] is the folder it is showing under. A card can be in several folders at once, and
+     * this is the one whose section it is drawn in: what a drag out of here must not land on,
+     * since a move into it would add a place the file already has.
+     */
+    data class Card(val ref: LibraryRef, val nodeId: Long) : HomeRow
 
     /** A line of text in place of cards: a folder with nothing in it, or a search with no hits. */
     data class Hint(val text: String) : HomeRow
+}
+
+/**
+ * The folder a card dragged out of [from] may be dropped on, given the row under it, or null.
+ *
+ * Only a folder's heading is a place to drop, and only some headings are: a card is a file, and
+ * a file is not a folder. The section the card is already in is out, since filing it there would
+ * add a place it already has; an imported folder is out, because that is a real directory Gander
+ * does not own and putting a file in it would mean moving the file on the phone rather than
+ * adding a place in the index. That leaves the reader's own folders, which is exactly what the
+ * menu's Move to offers.
+ */
+internal fun dropTargetFor(row: HomeRow?, from: Long): LibraryNode? = when (row) {
+    is HomeRow.Section -> row.node.takeIf { !it.imported && it.id != from }
+    else -> null
 }
 
 /**
@@ -46,7 +69,8 @@ internal class HomeAdapter(
     private val onCardMenu: (LibraryRef) -> Unit,
     private val onToggleSection: (HomeRow.Section) -> Unit,
     private val onSectionMenu: (LibraryNode) -> Unit,
-    private val onCoverState: (LibraryRef, Int) -> Unit
+    private val onCoverState: (LibraryRef, Int) -> Unit,
+    private val onGrip: (RecyclerView.ViewHolder) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val rows = mutableListOf<HomeRow>()
@@ -92,6 +116,9 @@ internal class HomeAdapter(
 
     override fun getItemCount(): Int = rows.size
 
+    /** The row at [position], or null if there is none. What a drag is over is asked this. */
+    fun rowAt(position: Int): HomeRow? = rows.getOrNull(position)
+
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
             is HomeRow.Section -> bindSection(holder, row)
@@ -125,6 +152,12 @@ internal class HomeAdapter(
         view.setOnLongClickListener { onSectionMenu(row.node); true }
     }
 
+    /**
+     * The touch listener below is not a click, and there is nothing it could call performClick
+     * for: a grip is held and moved, and the move it makes is already in the card's menu for
+     * anyone driving the screen by other means.
+     */
+    @SuppressLint("ClickableViewAccessibility")
     private fun bindCard(holder: RecyclerView.ViewHolder, row: HomeRow.Card) {
         val view = holder.itemView
         val ref = row.ref
@@ -162,6 +195,13 @@ internal class HomeAdapter(
             .joinToString(", ")
         view.setOnClickListener { onOpen(ref) }
         view.setOnLongClickListener { onCardMenu(ref); true }
+        // The grip starts a drag where a long press would have been the menu. Answered on the
+        // way down, which is the only event a drag handle needs: from there the touch helper has
+        // the item, and it takes the rest of the gesture, so the card is not opened as a tap too.
+        view.findViewById<View>(R.id.cardGrip).setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) onGrip(holder)
+            false
+        }
     }
 
     /**

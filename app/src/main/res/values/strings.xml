@@ -37,6 +37,10 @@
     <string name="delete">Delete</string>
     <string name="open">Open</string>
     <string name="move_to">Move to…</string>
+    <!-- Said after a card is dragged onto a folder's heading. A move here adds a place rather
+         than taking one away, so the card is in both folders afterwards and this is what says
+         which one is new. -->
+    <string name="filed_under">Added to \u201C%1$s\u201D.</string>
     <string name="remove_from_library">Remove from the library</string>
 
     <!-- Deleting a made-up folder forgets an index and nothing else, which is a different

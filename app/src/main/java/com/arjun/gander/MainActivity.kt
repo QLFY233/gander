@@ -6,6 +6,7 @@ import android.animation.ValueAnimator
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +27,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -129,12 +131,18 @@ class MainActivity : AppCompatActivity() {
     /** Folders whose over-large import has already been mentioned, so it is said once. */
     private val truncationMentioned = mutableSetOf<Long>()
 
+    /** The grid's drag, and the card it is carrying and the heading it is over, while it lasts. */
+    private var dragHelper: ItemTouchHelper? = null
+    private var dragging: HomeRow.Card? = null
+    private var dropRow: Int? = null
+
     private val homeAdapter = HomeAdapter(
         onOpen = { ref -> openInViewer(ref.uri.toUri()) },
         onCardMenu = { ref -> showCardMenu(ref) },
         onToggleSection = { section -> toggleSection(section) },
         onSectionMenu = { node -> showFolderMenu(node) },
-        onCoverState = { ref, state -> recordCover(ref, state) }
+        onCoverState = { ref, state -> recordCover(ref, state) },
+        onGrip = { holder -> dragHelper?.startDrag(holder) }
     )
 
     private val sidebarAdapter = SidebarAdapter(
@@ -339,6 +347,7 @@ class MainActivity : AppCompatActivity() {
         contentList.addOnLayoutChangeListener { view, left, _, right, _, _, _, _, _ ->
             applyColumns(right - left - view.paddingStart - view.paddingEnd)
         }
+        setUpDragToFile()
     }
 
     private fun applyColumns(widthPx: Int) {
@@ -354,6 +363,102 @@ class MainActivity : AppCompatActivity() {
             resources.getInteger(R.integer.home_card_max_columns)
         )
         if (grid.spanCount != columns) grid.spanCount = columns
+    }
+
+    /**
+     * Dragging a card by the grip in its corner onto another folder's heading, to file it there.
+     *
+     * The same thing the card's menu does under "Move to…", in one gesture. A long press is
+     * already the menu, so the drag has a handle of its own rather than taking that press away
+     * from it. Nothing is reordered either: what a drop chooses is a folder, not a place among
+     * its files, so no two rows ever swap and [onMove] always says no.
+     */
+    private fun setUpDragToFile() {
+        dragHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN or
+                ItemTouchHelper.START or ItemTouchHelper.END,
+            0
+        ) {
+            /** Off for the whole grid: the long press belongs to the card's menu. */
+            override fun isLongPressDragEnabled() = false
+
+            override fun onMove(
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                markDropTarget(target.bindingAdapterPosition)
+                return false
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+
+            override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+                if (actionState != ItemTouchHelper.ACTION_STATE_DRAG) return
+                dragging = viewHolder?.let { homeAdapter.rowAt(it.bindingAdapterPosition) }
+                    as? HomeRow.Card
+                // Lifted, so the card under the finger reads as the one being carried rather
+                // than as one more card among the ones it is passing over.
+                viewHolder?.itemView?.elevation = resources.displayMetrics.density * LIFTED_DP
+            }
+
+            /** Where a drag ends, dropped on something or not. */
+            override fun clearView(viewHolder: RecyclerView.ViewHolder, actionState: Int) {
+                viewHolder.itemView.elevation = 0f
+                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) finishDrag()
+            }
+        }).also { it.attachToRecyclerView(contentList) }
+    }
+
+    /** Lights up the heading under a drag, if what is being carried may be dropped there. */
+    private fun markDropTarget(position: Int) {
+        val from = dragging?.nodeId ?: return
+        if (dropTargetFor(homeAdapter.rowAt(position), from) == null) return clearDropTarget()
+        if (dropRow == position) return
+        clearDropTarget()
+        val view = contentList.findViewHolderForAdapterPosition(position)?.itemView ?: return
+        dropRow = position
+        // An outline rather than a fill: the heading stays readable while it is saying it will
+        // take the card, and the colourful thing under it is the folder's own icon.
+        view.background = GradientDrawable().apply {
+            setStroke(
+                (resources.displayMetrics.density * DROP_OUTLINE_DP).toInt(),
+                MaterialColors.getColor(view, com.google.android.material.R.attr.colorPrimary)
+            )
+            cornerRadius = resources.displayMetrics.density * DROP_CORNER_DP
+        }
+    }
+
+    private fun clearDropTarget() {
+        val at = dropRow ?: return
+        dropRow = null
+        contentList.findViewHolderForAdapterPosition(at)?.itemView?.background = null
+    }
+
+    /** Files what was being dragged where it was dropped, if it was over anywhere. */
+    private fun finishDrag() {
+        val card = dragging
+        val at = dropRow
+        dragging = null
+        clearDropTarget()
+        if (card == null || at == null) return
+        val node = dropTargetFor(homeAdapter.rowAt(at), card.nodeId) ?: return
+        fileInto(card.ref, node)
+    }
+
+    /**
+     * Files a card under a folder, and says which folder.
+     *
+     * A move here adds a place rather than taking one away, so the card stays in the folder it
+     * was dragged out of: the bar is what says where the new one is, since that folder's
+     * heading may be scrolled far from where the card landed.
+     */
+    private fun fileInto(ref: LibraryRef, node: LibraryNode) {
+        mutate { library.moveRef(ref.id, node.id) }
+        Snackbar.make(
+            contentList,
+            getString(R.string.filed_under, node.name),
+            Snackbar.LENGTH_SHORT
+        ).show()
     }
 
     private fun setUpSidebar() {
@@ -520,7 +625,7 @@ class MainActivity : AppCompatActivity() {
                             if (node.unscanned) R.string.unscanned_hint else R.string.empty_folder
                         )
                     )
-                    else -> shown.forEach { home += HomeRow.Card(it) }
+                    else -> shown.forEach { home += HomeRow.Card(it, node.id) }
                 }
             }
 
@@ -1241,6 +1346,13 @@ class MainActivity : AppCompatActivity() {
 
         /** How long a folder may take to read before the screen says anything about it. */
         const val RENDER_PROGRESS_DELAY_MS = 150L
+
+        /** How high a dragged card is lifted out of the grid, in dp. */
+        const val LIFTED_DP = 8f
+
+        /** The outline the heading under a drag draws: its width in dp, and its corner radius. */
+        const val DROP_OUTLINE_DP = 2f
+        const val DROP_CORNER_DP = 12f
 
         /** The two sidebar headings, as keys in Settings' record of what is folded. */
         const val SIDEBAR_RECENT = "sidebar.recent"

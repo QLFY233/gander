@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The dots of a drag handle, in a 2 x 3 grid: the shape Material gives one, so that it reads as
+     "this can be picked up and put down" rather than as a menu or a button.
+
+     Filled white rather than tinted at the point of use, because it is drawn in a layer list
+     over a scrim (see card_grip): the two colours are chosen together, and a tint here would
+     have to be repeated there. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7.8,6.6a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0ZM13,6.6a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0ZM7.8,12a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0ZM13,12a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0ZM7.8,17.4a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0ZM13,17.4a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0Z" />
+</vector>

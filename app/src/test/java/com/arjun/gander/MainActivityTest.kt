@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -643,6 +645,122 @@ class MainActivityTest {
     }
 
     // ---------------------------------------------------------------
+    // Filing a card into a folder
+    // ---------------------------------------------------------------
+
+    /** A folder of the reader's own, made the way the title bar makes one. */
+    private fun ActivityController<MainActivity>.newFolder(name: String) {
+        toolbar().menu.performIdentifierAction(R.id.action_new_folder, 0)
+        shadowOf(context.mainLooper).idle()
+        latestDialog()!!.findViewById<android.widget.EditText>(R.id.textField)!!.setText(name)
+        answer(AlertDialog.BUTTON_POSITIVE)
+    }
+
+    /** The row for [text] under [id], as it is on screen: only a laid-out row can be dragged onto. */
+    private fun ActivityController<MainActivity>.onScreen(id: Int, text: String): View? {
+        val list = grid()
+        return (0 until list.adapter!!.itemCount).firstNotNullOfOrNull { position ->
+            list.findViewHolderForAdapterPosition(position)?.itemView
+                ?.takeIf { it.findViewById<TextView>(id)?.text?.toString() == text }
+        }
+    }
+
+    /**
+     * Drags a card's grip onto another row, in the grid's own coordinates, the way a finger
+     * would: down on the grip, across to the row, up.
+     *
+     * The grid keeps its rows where they are — what a drag chooses is a folder, not a place
+     * among its files — so this is the whole of the gesture, not a reorder and a drop. [lands]
+     * is whether [onto] is somewhere the card may be put, which is what the heading says by
+     * drawing an outline while it is over it.
+     */
+    private fun ActivityController<MainActivity>.dragGrip(
+        card: View,
+        onto: View,
+        lands: Boolean = true
+    ) {
+        val list = grid()
+        val grip = card.findViewById<View>(R.id.cardGrip)
+        val at = IntArray(2)
+        val from = IntArray(2)
+        grip.getLocationInWindow(at)
+        list.getLocationInWindow(from)
+        val downX = at[0] - from[0] + grip.width / 2f
+        val downY = at[1] - from[1] + grip.height / 2f
+        onto.getLocationInWindow(at)
+        val toX = at[0] - from[0] + onto.width / 2f
+        val toY = at[1] - from[1] + onto.height / 2f
+
+        val now = SystemClock.uptimeMillis()
+        list.dispatchTouchEvent(
+            MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, downX, downY, 0)
+        )
+        // Across in a few steps, as a finger goes, so the touch helper is asked about the rows
+        // on the way rather than only once the finger has arrived.
+        for (step in 1..STEPS) {
+            val part = step.toFloat() / STEPS
+            list.dispatchTouchEvent(
+                MotionEvent.obtain(
+                    now, now + step,
+                    MotionEvent.ACTION_MOVE,
+                    downX + (toX - downX) * part,
+                    downY + (toY - downY) * part,
+                    0
+                )
+            )
+        }
+        shadowOf(context.mainLooper).idle()
+
+        if (lands) assertThat(onto.background).isNotNull() else assertThat(onto.background).isNull()
+
+        list.dispatchTouchEvent(
+            MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, toX, toY, 0)
+        )
+        shadowOf(context.mainLooper).idle()
+        // Landed or let go, the heading is a heading again.
+        assertThat(onto.background).isNull()
+    }
+
+    /**
+     * A card dragged by the grip in its corner onto another folder's heading is filed there.
+     *
+     * The same move the card's menu offers under "Move to…", in one gesture, and the reason the
+     * grip exists at all: the long press is the menu, and taking that away for a drag would cost
+     * the file actions.
+     */
+    @Test
+    fun aCardDraggedByItsGripIsFiledUnderAnotherFoldersHeading() {
+        imported()
+        val controller = home()
+        controller.newFolder("Receipts")
+        val card = controller.onScreen(R.id.cardTitle, "zeta.txt")!!
+        val heading = controller.onScreen(R.id.sectionTitle, "Receipts")!!
+
+        controller.dragGrip(card, heading)
+
+        val receipts = library.nodes().first { it.name == "Receipts" }
+        assertThat(library.refsFor(receipts).map { it.name }).containsExactly("zeta.txt")
+        // A place added, not one taken away: the folder it came from still has the file.
+        val documents = library.nodes().first { it.name == "Documents" }
+        assertThat(library.refsFor(documents).map { it.name }).contains("zeta.txt")
+    }
+
+    /** The heading of the folder the card came out of is not somewhere to put it. */
+    @Test
+    fun aCardDroppedOnItsOwnFoldersHeadingGoesNowhere() {
+        imported()
+        val controller = home()
+        val card = controller.onScreen(R.id.cardTitle, "zeta.txt")!!
+        val heading = controller.onScreen(R.id.sectionTitle, "Documents")!!
+        val documents = library.nodes().first { it.name == "Documents" }
+        val before = library.refsFor(documents).size
+
+        controller.dragGrip(card, heading, lands = false)
+
+        assertThat(library.refsFor(documents).size).isEqualTo(before)
+    }
+
+    // ---------------------------------------------------------------
     // Removal
     // ---------------------------------------------------------------
 
@@ -946,5 +1064,10 @@ class MainActivityTest {
         assertThat(controller.toolbar().menu.findItem(R.id.action_filter).isVisible).isTrue()
         assertThat(controller.toolbar().menu.findItem(R.id.action_share_app).isVisible).isTrue()
         assertThat(controller.toolbar().menu.findItem(R.id.action_about).isVisible).isTrue()
+    }
+
+    private companion object {
+        /** How many moves a drag is taken across in: enough to pass over a row, not a frame. */
+        const val STEPS = 6
     }
 }
